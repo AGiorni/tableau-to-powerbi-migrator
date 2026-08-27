@@ -60,6 +60,9 @@ _AGGREGATION_MAP: dict[str, SummarizeBy] = {
 # still opens; the real expression is produced by the expression-translation stage.
 UNTRANSLATED_DAX = "BLANK()"
 
+# Connection classes whose data is loaded from a file and needs strict type conversion.
+_FILE_SOURCES = {"textscan", "excel-direct"}
+
 
 @dataclass
 class MappingResult:
@@ -276,6 +279,17 @@ def _build_partition(
     m_source, warning = build_m_source(connection, relation, table.columns)
     if warning:
         report.add(IssueSeverity.WARNING, "model", table.name, warning)
+    elif connection is not None and connection.cls in _FILE_SOURCES:
+        # File data is typed strictly (matching Tableau's declared types); Power BI surfaces any
+        # unconvertible values as an "Errors in <table>" query rather than silently nulling them.
+        report.add(
+            IssueSeverity.INFO,
+            "model",
+            table.name,
+            f"Columns are type-converted from a file source; review the 'Errors in {table.name}' "
+            "query in Power BI for values that don't match their migrated type (e.g. codes typed "
+            "as numbers).",
+        )
     return PBIPartition(name=f"{table.name}-partition", m_source=m_source)
 
 
