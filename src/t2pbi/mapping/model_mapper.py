@@ -120,19 +120,26 @@ def _map_datasource(
         grouped[target].append(_map_column(col, origin))
 
     tables: list[PBITable] = []
+    # Partition sources are built last (see below) so type transforms include hidden key columns.
+    table_sources: dict[str, tuple[TableauRelation, TableauConnection | None]] = {}
     for relation in relations:
         table_name = _sanitize_name(ds.display_name if single_table else relation.name)
         columns = grouped.get(relation.name, [])
         measures = _map_measures(table_name, ds, pending) if relation.name == primary else []
-        partition = _build_partition(
-            relation, conn_by_name.get(relation.connection_name) or sole_conn, table_name, report
-        )
-        tables.append(
-            PBITable(name=table_name, columns=columns, measures=measures, partition=partition)
+        tables.append(PBITable(name=table_name, columns=columns, measures=measures))
+        table_sources[table_name] = (
+            relation,
+            conn_by_name.get(relation.connection_name) or sole_conn,
         )
 
     relationships = _map_joins(ds, single_table, report)
     _ensure_relationship_columns(tables, relationships)
+
+    # Build partitions after columns (incl. hidden keys) are final so M types the whole table.
+    for table in tables:
+        relation, connection = table_sources[table.name]
+        table.partition = _build_partition(relation, connection, table, report)
+
     return tables, relationships
 
 
@@ -261,15 +268,15 @@ def _map_calculated_field(
 def _build_partition(
     relation: TableauRelation,
     connection: TableauConnection | None,
-    table_name: str,
+    table: PBITable,
     report: MigrationReport,
 ) -> PBIPartition:
     """Build a table partition with a real Power Query source when the connection is supported."""
 
-    m_source, warning = build_m_source(connection, relation)
+    m_source, warning = build_m_source(connection, relation, table.columns)
     if warning:
-        report.add(IssueSeverity.WARNING, "model", table_name, warning)
-    return PBIPartition(name=f"{table_name}-partition", m_source=m_source)
+        report.add(IssueSeverity.WARNING, "model", table.name, warning)
+    return PBIPartition(name=f"{table.name}-partition", m_source=m_source)
 
 
 def _sanitize_name(name: str) -> str:

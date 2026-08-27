@@ -27,6 +27,10 @@ def test_csv_partition_uses_csv_document(superstore_twb):
     assert "PromoteHeaders" in m
     # No empty-table stub remains for a supported connection.
     assert "#table({}, {})" not in m
+    # Columns are typed so they don't all load as text (regression).
+    assert "Table.TransformColumnTypes" in m
+    assert '{"Sales", type number}' in m
+    assert '{"Quantity", Int64.Type}' in m
 
 
 def test_sqlserver_partitions(sales_sql_twb):

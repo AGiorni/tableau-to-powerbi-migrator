@@ -49,7 +49,10 @@ def test_logical_relationship_emitted():
 def test_excel_partition_generated():
     orders = next(t for t in _model().tables if t.name == "Orders")
     assert orders.partition is not None
-    assert "Excel.Workbook" in orders.partition.m_source
+    m = orders.partition.m_source
+    assert "Excel.Workbook" in m
+    # Sales must be typed as a number, not left as text (regression).
+    assert '{"Sales", type number}' in m
 
 
 def test_model_is_structurally_valid():

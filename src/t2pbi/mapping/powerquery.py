@@ -7,24 +7,38 @@ stub and signal a warning so the migration report can flag them.
 
 from __future__ import annotations
 
+from t2pbi.ir.powerbi_ir import PBIColumn, PBIDataType
 from t2pbi.ir.tableau_ir import TableauConnection, TableauRelation
 
 _EMPTY_TABLE = "let\n    Source = #table({}, {})\nin\n    Source"
 
+# Model data type -> M ascription used in Table.TransformColumnTypes.
+_M_TYPES: dict[PBIDataType, str] = {
+    PBIDataType.INT64: "Int64.Type",
+    PBIDataType.DOUBLE: "type number",
+    PBIDataType.DECIMAL: "type number",
+    PBIDataType.STRING: "type text",
+    PBIDataType.BOOLEAN: "type logical",
+    PBIDataType.DATE_TIME: "type datetime",
+}
+
 
 def build_m_source(
-    connection: TableauConnection | None, relation: TableauRelation
+    connection: TableauConnection | None,
+    relation: TableauRelation,
+    columns: list[PBIColumn] | None = None,
 ) -> tuple[str, str | None]:
     """Return ``(m_source, warning)`` for a relation. ``warning`` is None when fully mapped."""
 
+    columns = columns or []
     if connection is None:
         return _EMPTY_TABLE, "No connection resolved; emitted an empty-table stub."
 
     cls = connection.cls
     if cls == "textscan":
-        return _csv(connection), None
+        return _csv(connection, columns), None
     if cls == "excel-direct":
-        return _excel(connection, relation), None
+        return _excel(connection, relation, columns), None
     if cls == "sqlserver":
         return _sql_server(connection, relation), None
     if cls == "postgres":
@@ -38,31 +52,53 @@ def build_m_source(
     )
 
 
-def _csv(connection: TableauConnection) -> str:
+def _csv(connection: TableauConnection, columns: list[PBIColumn]) -> str:
     path = _file_path(connection)
-    return (
-        "let\n"
-        f'    Source = Csv.Document(File.Contents("{_esc(path)}"), '
-        "[Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),\n"
-        "    Headers = Table.PromoteHeaders(Source, [PromoteAllScalars=true])\n"
-        "in\n"
-        "    Headers"
-    )
+    steps = [
+        (
+            f'Source = Csv.Document(File.Contents("{_esc(path)}"), '
+            '[Delimiter=",", Encoding=65001, QuoteStyle=QuoteStyle.Csv])'
+        ),
+        "Headers = Table.PromoteHeaders(Source, [PromoteAllScalars=true])",
+    ]
+    return _finish(steps, "Headers", columns)
 
 
-def _excel(connection: TableauConnection, relation: TableauRelation) -> str:
+def _excel(connection: TableauConnection, relation: TableauRelation, columns: list[PBIColumn]) -> str:
     path = _file_path(connection)
     sheet = relation.name
     # Match by name across any kind (Sheet/Table/DefinedName); a hardcoded Kind="Sheet" fails
     # when the workbook exposes the data as an Excel table or named range.
-    return (
-        "let\n"
-        f'    Source = Excel.Workbook(File.Contents("{_esc(path)}"), null, true),\n'
-        f'    Navigation = Table.SelectRows(Source, each [Name] = "{_esc(sheet)}"){{0}}[Data],\n'
-        "    Headers = Table.PromoteHeaders(Navigation, [PromoteAllScalars=true])\n"
-        "in\n"
-        "    Headers"
-    )
+    steps = [
+        f'Source = Excel.Workbook(File.Contents("{_esc(path)}"), null, true)',
+        f'Navigation = Table.SelectRows(Source, each [Name] = "{_esc(sheet)}"){{0}}[Data]',
+        "Headers = Table.PromoteHeaders(Navigation, [PromoteAllScalars=true])",
+    ]
+    return _finish(steps, "Headers", columns)
+
+
+def _finish(steps: list[str], last_step: str, columns: list[PBIColumn]) -> str:
+    """Assemble a let/in query, adding a type-transform step so loaded types match the model.
+
+    File sources (CSV/Excel) load every column as text after PromoteHeaders; without this the
+    model column would render as text despite its declared data type.
+    """
+
+    transform = _type_transform(columns, last_step)
+    if transform:
+        steps.append(transform)
+        last_step = "Typed"
+    body = ",\n    ".join(steps)
+    return f"let\n    {body}\nin\n    {last_step}"
+
+
+def _type_transform(columns: list[PBIColumn], source_step: str) -> str:
+    pairs = [
+        f'{{"{_esc(c.source_column)}", {_M_TYPES.get(c.data_type, "type any")}}}' for c in columns
+    ]
+    if not pairs:
+        return ""
+    return f"Typed = Table.TransformColumnTypes({source_step}, {{{', '.join(pairs)}}})"
 
 
 def _sql_server(connection: TableauConnection, relation: TableauRelation) -> str:
