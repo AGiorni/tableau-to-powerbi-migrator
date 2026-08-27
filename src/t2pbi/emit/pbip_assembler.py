@@ -32,8 +32,9 @@ import json
 import uuid
 from pathlib import Path
 
+from t2pbi.emit.pbir_writer import build_page_json, build_visual_json
 from t2pbi.emit.tmdl_writer import render_semantic_model
-from t2pbi.ir.powerbi_ir import PBIModel
+from t2pbi.ir.powerbi_ir import PBIModel, PBIReportPage
 
 _SCHEMA_BASE = "https://developer.microsoft.com/json-schemas/fabric"
 
@@ -44,12 +45,14 @@ _THEME_FILE = Path(__file__).parent / "resources" / "BaseThemes" / f"{_THEME_NAM
 _THEME_REL = f"StaticResources/SharedResources/BaseThemes/{_THEME_NAME}.json"
 
 
-def assemble_pbip(model: PBIModel, out_dir: str | Path) -> Path:
+def assemble_pbip(
+    model: PBIModel, out_dir: str | Path, pages: list[PBIReportPage] | None = None
+) -> Path:
     """Write a full ``.pbip`` project for ``model`` under ``out_dir``. Returns the .pbip path."""
 
     out = Path(out_dir)
     name = model.name
-    files = build_file_map(model)
+    files = build_file_map(model, pages)
 
     for rel_path, content in files.items():
         target = out / rel_path
@@ -60,7 +63,7 @@ def assemble_pbip(model: PBIModel, out_dir: str | Path) -> Path:
     return out / f"{name}.pbip"
 
 
-def build_file_map(model: PBIModel) -> dict[str, str]:
+def build_file_map(model: PBIModel, pages: list[PBIReportPage] | None = None) -> dict[str, str]:
     """Return every project file as a ``relative path -> text`` mapping (no disk I/O)."""
 
     name = model.name
@@ -74,16 +77,25 @@ def build_file_map(model: PBIModel) -> dict[str, str]:
     for rel, content in render_semantic_model(model).items():
         files[f"{name}.SemanticModel/definition/{rel}"] = content
 
-    # Report scaffold mirroring a Desktop-generated blank PBIR report (expanded in Phase 2).
-    page_id = uuid.uuid4().hex[:20]
+    # Report: one page per migrated worksheet, or a single blank page when there are none.
+    report_pages = pages or [_blank_page()]
     files[f"{name}.Report/definition.pbir"] = _json(_pbir(name))
     files[f"{name}.Report/definition/version.json"] = _json(_report_version())
     files[f"{name}.Report/definition/report.json"] = _json(_report())
-    files[f"{name}.Report/definition/pages/pages.json"] = _json(_pages(page_id))
-    files[f"{name}.Report/definition/pages/{page_id}/page.json"] = _json(_page(page_id))
+    files[f"{name}.Report/definition/pages/pages.json"] = _json(_pages(report_pages))
+    for page in report_pages:
+        files[f"{name}.Report/definition/pages/{page.name}/page.json"] = _json(build_page_json(page))
+        for visual in page.visuals:
+            files[
+                f"{name}.Report/definition/pages/{page.name}/visuals/{visual.name}/visual.json"
+            ] = _json(build_visual_json(visual))
     files[f"{name}.Report/{_THEME_REL}"] = _read_theme()
 
     return files
+
+
+def _blank_page() -> PBIReportPage:
+    return PBIReportPage(name=uuid.uuid4().hex[:20], display_name="Page 1")
 
 
 def _pbip_pointer(name: str) -> dict:
@@ -152,22 +164,11 @@ def _report() -> dict:
     }
 
 
-def _pages(page_id: str) -> dict:
+def _pages(pages: list[PBIReportPage]) -> dict:
     return {
         "$schema": f"{_SCHEMA_BASE}/item/report/definition/pagesMetadata/1.1.0/schema.json",
-        "pageOrder": [page_id],
-        "activePageName": page_id,
-    }
-
-
-def _page(page_id: str) -> dict:
-    return {
-        "$schema": f"{_SCHEMA_BASE}/item/report/definition/page/2.1.0/schema.json",
-        "name": page_id,
-        "displayName": "Page 1",
-        "displayOption": "FitToPage",
-        "height": 1080,
-        "width": 1920,
+        "pageOrder": [p.name for p in pages],
+        "activePageName": pages[0].name,
     }
 
 

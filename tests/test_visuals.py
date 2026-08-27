@@ -1,0 +1,71 @@
+"""Tests for visual mapping (worksheet -> page/visual) and PBIR visual JSON emission."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from t2pbi.emit.pbir_writer import build_visual_json
+from t2pbi.ingest import load_workbook
+from t2pbi.ir.powerbi_ir import FieldKind, PBIFieldRef, PBIVisual
+from t2pbi.mapping.model_mapper import map_model
+from t2pbi.mapping.report import MigrationReport
+from t2pbi.mapping.visual_mapper import map_visuals
+from t2pbi.parse import parse_workbook
+
+_BOOK1 = Path(__file__).resolve().parents[1] / "samples" / "input" / "Book1.twb"
+
+
+def test_visual_json_shapes_match_reference():
+    visual = PBIVisual(
+        name="v1",
+        visual_type="clusteredColumnChart",
+        wells={
+            "Category": [PBIFieldRef(entity="Orders", property="Category")],
+            "Y": [PBIFieldRef(entity="Orders", property="Sales", kind=FieldKind.AGGREGATION, function=0)],
+        },
+    )
+    j = build_visual_json(visual)
+
+    assert j["visual"]["visualType"] == "clusteredColumnChart"
+    cat = j["visual"]["query"]["queryState"]["Category"]["projections"][0]
+    assert cat["field"]["Column"]["Property"] == "Category"
+    assert cat["queryRef"] == "Orders.Category"
+    assert cat["active"] is True
+
+    y = j["visual"]["query"]["queryState"]["Y"]["projections"][0]
+    assert y["field"]["Aggregation"]["Function"] == 0
+    assert y["queryRef"] == "Sum(Orders.Sales)"
+    assert y["nativeQueryRef"] == "Sum of Sales"
+
+
+def test_measure_field_expr():
+    visual = PBIVisual(
+        name="v",
+        visual_type="clusteredColumnChart",
+        wells={"Y": [PBIFieldRef(entity="Orders", property="Profit Ratio", kind=FieldKind.MEASURE)]},
+    )
+    y = build_visual_json(visual)["visual"]["query"]["queryState"]["Y"]["projections"][0]
+    assert y["field"]["Measure"]["Property"] == "Profit Ratio"
+    assert y["queryRef"] == "Orders.Profit Ratio"
+
+
+def test_map_visuals_book1_if_present():
+    if not _BOOK1.exists():
+        return
+
+    workbook = parse_workbook(load_workbook(_BOOK1))
+    model = map_model(workbook).model
+    pages = map_visuals(workbook, model, MigrationReport())
+
+    # Each page has one visual; at least the two bar/area sheets mapped.
+    assert pages
+    by_name = {p.display_name: p for p in pages}
+    assert "Sales by Category" in by_name
+
+    sales_cat = by_name["Sales by Category"].visuals[0]
+    assert sales_cat.visual_type == "areaChart"
+    # Category well holds the dimension; Y holds an aggregated measure.
+    cat_props = {f.property for f in sales_cat.wells.get("Category", [])}
+    assert "Category" in cat_props
+    y_fields = sales_cat.wells.get("Y", [])
+    assert any(f.property == "Sales" and f.kind is FieldKind.AGGREGATION for f in y_fields)

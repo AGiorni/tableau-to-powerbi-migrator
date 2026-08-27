@@ -10,11 +10,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from t2pbi.ingest import load_workbook
-from t2pbi.ir.powerbi_ir import PBIModel
+from t2pbi.ir.powerbi_ir import PBIModel, PBIReportPage
 from t2pbi.ir.tableau_ir import TableauCalculatedField, TableauWorkbook
 from t2pbi.mapping.expression_translator import translate_expressions
 from t2pbi.mapping.model_mapper import map_model
 from t2pbi.mapping.report import MigrationReport
+from t2pbi.mapping.visual_mapper import map_visuals
 from t2pbi.parse import parse_workbook
 
 
@@ -29,6 +30,7 @@ class PipelineState:
     workbook: TableauWorkbook | None = None
     model: PBIModel | None = None
     pending_expressions: dict[str, TableauCalculatedField] = field(default_factory=dict)
+    pages: list[PBIReportPage] = field(default_factory=list)
     report: MigrationReport = field(default_factory=MigrationReport)
     pbip_path: str | None = None
 
@@ -56,6 +58,12 @@ def translate_expressions_node(state: PipelineState) -> PipelineState:
     return state
 
 
+def map_visuals_node(state: PipelineState) -> PipelineState:
+    assert state.workbook is not None and state.model is not None
+    state.pages = map_visuals(state.workbook, state.model, state.report)
+    return state
+
+
 def validate_node(state: PipelineState) -> PipelineState:
     assert state.model is not None, "mapping must run before validation"
     from t2pbi.mapping.report import IssueSeverity
@@ -79,7 +87,7 @@ def assemble_node(state: PipelineState) -> PipelineState:
     assert state.model is not None, "mapping must run before assembly"
     from t2pbi.emit import assemble_pbip
 
-    path = assemble_pbip(state.model, state.out_dir)
+    path = assemble_pbip(state.model, state.out_dir, state.pages)
     state.pbip_path = str(path)
     return state
 
@@ -88,6 +96,7 @@ STAGES = (
     ingest_node,
     map_model_node,
     translate_expressions_node,
+    map_visuals_node,
     validate_node,
     assemble_node,
 )

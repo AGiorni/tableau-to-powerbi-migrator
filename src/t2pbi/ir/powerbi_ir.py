@@ -118,3 +118,44 @@ class PBIModel(BaseModel):
     tables: list[PBITable] = Field(default_factory=list)
     relationships: list[PBIRelationship] = Field(default_factory=list)
     expressions: list[PBIExpression] = Field(default_factory=list)
+
+
+class FieldKind(str, Enum):
+    """How a field is referenced in a visual's query."""
+
+    COLUMN = "column"  # a table column used as a grouping/dimension
+    MEASURE = "measure"  # a model measure
+    AGGREGATION = "aggregation"  # an implicit aggregation of a raw column
+
+
+class PBIFieldRef(BaseModel):
+    """A single field placed in a visual field well (a query projection)."""
+
+    entity: str = Field(description="Owning table name.")
+    property: str = Field(description="Column or measure name.")
+    kind: FieldKind = FieldKind.COLUMN
+    # Aggregation function enum (0=Sum,1=Avg,2=Min,3=Max,4=Count) when kind is AGGREGATION.
+    function: int | None = None
+
+
+class PBIVisual(BaseModel):
+    """A single report visual."""
+
+    name: str = Field(description="20-char identifier used as the visual folder/name.")
+    visual_type: str = Field(description="e.g. 'clusteredColumnChart', 'tableEx', 'lineChart'.")
+    x: float = 0
+    y: float = 0
+    z: int = 0
+    width: float = 600
+    height: float = 400
+    tab_order: int = 0
+    # Field well name (e.g. 'Category', 'Y', 'Series', 'Values') -> its projected fields.
+    wells: dict[str, list[PBIFieldRef]] = Field(default_factory=dict)
+
+
+class PBIReportPage(BaseModel):
+    """A report page (one per migrated Tableau worksheet)."""
+
+    name: str = Field(description="20-char identifier used as the page folder/name.")
+    display_name: str
+    visuals: list[PBIVisual] = Field(default_factory=list)
