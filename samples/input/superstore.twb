@@ -1,0 +1,47 @@
+<?xml version='1.0' encoding='utf-8' ?>
+<workbook source-build='2023.1' version='18.1' xmlns:user='http://www.tableausoftware.com/xml/user'>
+  <datasources>
+    <datasource caption='Superstore' inline='true' name='federated.superstore' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='orders.csv' name='textscan.orders'>
+            <connection class='textscan' directory='/data' filename='orders.csv' server='' />
+          </named-connection>
+        </named-connections>
+      </connection>
+      <column caption='Sales' datatype='real' name='[Sales]' role='measure' type='quantitative' default-aggregation='Sum' />
+      <column caption='Quantity' datatype='integer' name='[Quantity]' role='measure' type='quantitative' default-aggregation='Sum' />
+      <column caption='Category' datatype='string' name='[Category]' role='dimension' type='nominal' />
+      <column caption='Order Date' datatype='date' name='[Order Date]' role='dimension' type='ordinal' />
+      <column caption='Profit Ratio' datatype='real' name='[Profit Ratio]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='SUM([Profit]) / SUM([Sales])' />
+      </column>
+      <column caption='Sales per Customer' datatype='real' name='[Sales per Customer]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='{ FIXED [Customer Name] : SUM([Sales]) }' />
+      </column>
+    </datasource>
+    <datasource name='Parameters'>
+      <column caption='Target Margin' datatype='real' name='[Parameters].[Target Margin]' role='measure' type='quantitative' value='0.15'>
+        <calculation class='tableau' formula='0.15' />
+      </column>
+    </datasource>
+  </datasources>
+  <worksheets>
+    <worksheet name='Sales by Category'>
+      <table>
+        <view>
+          <datasources>
+            <datasource caption='Superstore' name='federated.superstore' />
+          </datasources>
+        </view>
+      </table>
+    </worksheet>
+  </worksheets>
+  <dashboards>
+    <dashboard name='Overview'>
+      <zones>
+        <zone name='Sales by Category' />
+      </zones>
+    </dashboard>
+  </dashboards>
+</workbook>

@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "t2pbi"
+version = "0.0.1"
+description = "AI-assisted migrator from Tableau workbooks (.twb/.twbx) to Power BI projects (.pbip)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "lxml>=5.2",
+    "pydantic>=2.7",
+    "langgraph>=0.2",
+    "langchain-openai>=0.1.20",
+    "azure-identity>=1.17",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+t2pbi = "t2pbi.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/t2pbi"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]

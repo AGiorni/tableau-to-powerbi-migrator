@@ -1,0 +1,41 @@
+<?xml version='1.0' encoding='utf-8' ?>
+<workbook source-build='2023.1' version='18.1'>
+  <datasources>
+    <datasource caption='Sales DB' inline='true' name='federated.salesdb' version='18.1'>
+      <connection class='federated'>
+        <named-connections>
+          <named-connection caption='AdventureWorks' name='sqlserver.aw'>
+            <connection authentication='sqlserver' class='sqlserver' dbname='AdventureWorks' odbc-native-protocol='yes' server='sql.contoso.com' username='reader' />
+          </named-connection>
+        </named-connections>
+        <relation connection='sqlserver.aw' join='inner' type='join'>
+          <clause type='join'>
+            <expression op='='>
+              <expression op='[Orders].[CustomerID]' />
+              <expression op='[Customers].[CustomerID]' />
+            </expression>
+          </clause>
+          <relation connection='sqlserver.aw' name='Orders' table='[dbo].[Orders]' type='table' />
+          <relation connection='sqlserver.aw' name='Customers' table='[dbo].[Customers]' type='table' />
+        </relation>
+        <cols>
+          <map key='[Sales]' value='[Orders].[Sales]' />
+          <map key='[Order Date]' value='[Orders].[OrderDate]' />
+          <map key='[CustomerID]' value='[Orders].[CustomerID]' />
+          <map key='[Customer Name]' value='[Customers].[CustomerName]' />
+          <map key='[Country]' value='[Customers].[Country]' />
+        </cols>
+      </connection>
+      <column caption='Sales' datatype='real' name='[Sales]' role='measure' type='quantitative' default-aggregation='Sum' />
+      <column caption='Order Date' datatype='date' name='[Order Date]' role='dimension' type='ordinal' />
+      <column caption='CustomerID' datatype='integer' name='[CustomerID]' role='dimension' type='nominal' />
+      <column caption='Customer Name' datatype='string' name='[Customer Name]' role='dimension' type='nominal' />
+      <column caption='Country' datatype='string' name='[Country]' role='dimension' type='nominal' />
+      <column caption='Avg Sale' datatype='real' name='[Avg Sale]' role='measure' type='quantitative'>
+        <calculation class='tableau' formula='AVG([Sales])' />
+      </column>
+    </datasource>
+  </datasources>
+  <worksheets />
+  <dashboards />
+</workbook>
