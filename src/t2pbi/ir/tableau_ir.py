@@ -144,11 +144,34 @@ class TableauDatasource(BaseModel):
         return self.caption or self.name
 
 
+class TableauFieldRef(BaseModel):
+    """A field placed on a worksheet shelf or encoding (a Tableau column-instance).
+
+    Parsed from the internal ``[agg:Field Name:role]`` form, e.g. ``sum:Sales:qk``.
+    """
+
+    field: str = Field(description="Field display name, e.g. 'Sales'.")
+    aggregation: str = Field(default="none", description="Tableau agg code: none/sum/avg/cnt/...")
+    role: TableauRole = TableauRole.DIMENSION
+    raw: str = Field(default="", description="Original column-instance name for debugging.")
+
+
+class TableauEncoding(BaseModel):
+    """A mark encoding (color, size, text, tooltip, detail, ...) bound to a field."""
+
+    kind: str = Field(description="Encoding type: color/size/text/label/tooltip/detail/...")
+    field: TableauFieldRef
+
+
 class TableauWorksheet(BaseModel):
-    """A worksheet. Only high-level facts are captured in Phase 1."""
+    """A worksheet: its mark type and the fields on its shelves and encodings."""
 
     name: str
     datasource_names: list[str] = Field(default_factory=list)
+    mark_class: str = Field(default="Automatic", description="Tableau mark type, e.g. 'Bar'.")
+    rows: list[TableauFieldRef] = Field(default_factory=list)
+    cols: list[TableauFieldRef] = Field(default_factory=list)
+    encodings: list[TableauEncoding] = Field(default_factory=list)
 
 
 class TableauDashboard(BaseModel):

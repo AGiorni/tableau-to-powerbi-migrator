@@ -21,6 +21,8 @@ from t2pbi.ir.tableau_ir import (
     TableauDashboard,
     TableauDatasource,
     TableauDataType,
+    TableauEncoding,
+    TableauFieldRef,
     TableauJoin,
     TableauParameter,
     TableauRelation,
@@ -385,10 +387,68 @@ def _parse_worksheet(ws_el: etree._Element) -> TableauWorksheet:
         for ds in ws_el.findall("./table/view/datasources/datasource")
         if ds.get("name")
     ]
+    mark = ws_el.find(".//mark")
+    mark_class = (mark.get("class") if mark is not None else None) or "Automatic"
+
+    rows = _parse_shelf(ws_el.findtext(".//rows"))
+    cols = _parse_shelf(ws_el.findtext(".//cols"))
+    encodings = [
+        TableauEncoding(kind=etree.QName(enc).localname, field=ref)
+        for enc in ws_el.findall(".//encodings/*")
+        if (ref := _parse_field_ref(enc.get("column"))) is not None
+    ]
+
     return TableauWorksheet(
         name=ws_el.get("name") or "",
         datasource_names=[n for n in ds_names if n is not None],
+        mark_class=mark_class,
+        rows=rows,
+        cols=cols,
+        encodings=encodings,
     )
+
+
+def _parse_shelf(text: str | None) -> list[TableauFieldRef]:
+    """Parse a rows/cols shelf expression into field refs.
+
+    Shelves nest fields with ``*``, e.g. ``([ds].[none:Category:nk] * [ds].[sum:Sales:qk])``.
+    """
+
+    if not text:
+        return []
+    refs: list[TableauFieldRef] = []
+    for token in text.split("*"):
+        ref = _parse_field_ref(token.strip().strip("()").strip())
+        if ref is not None:
+            refs.append(ref)
+    return refs
+
+
+def _parse_field_ref(ref: str | None) -> TableauFieldRef | None:
+    """Parse a column-instance reference like ``[ds].[sum:Sales:qk]`` into a field ref.
+
+    Returns None for generated/internal fields (Latitude, Measure Names, object ids, etc.).
+    """
+
+    if not ref:
+        return None
+    # Take the last bracketed segment (drop the datasource qualifier).
+    inner = ref.rsplit(".[", 1)[-1]
+    inner = _strip_brackets(inner if inner.startswith("[") else "[" + inner)
+    if not inner or inner.startswith((":", "__tableau", "Multiple Values")):
+        return None
+    if "(generated)" in inner:
+        return None
+
+    parts = inner.split(":")
+    if len(parts) >= 3:
+        agg, role_code = parts[0], parts[-1]
+        field = ":".join(parts[1:-1])
+    else:
+        agg, field, role_code = "none", inner, "nk"
+
+    role = TableauRole.MEASURE if role_code == "qk" else TableauRole.DIMENSION
+    return TableauFieldRef(field=field, aggregation=agg, role=role, raw=inner)
 
 
 def _parse_dashboard(db_el: etree._Element) -> TableauDashboard:
