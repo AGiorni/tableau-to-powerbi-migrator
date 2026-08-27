@@ -22,16 +22,10 @@ from t2pbi.mapping.report import IssueSeverity, MigrationReport
 # Tableau aggregation code -> Power BI aggregation Function enum.
 _AGG_FUNCTION = {"sum": 0, "avg": 1, "min": 2, "max": 3, "cnt": 4, "count": 4, "cntd": 5}
 
-# Tableau mark class -> Power BI visual type.
-_MARK_TO_VISUAL = {
-    "Bar": "clusteredColumnChart",
-    "Line": "lineChart",
-    "Area": "areaChart",
-    "Pie": "pieChart",
-    "Square": "tableEx",
-    "Text": "tableEx",
-    "Gantt Bar": "clusteredBarChart",
-}
+# Tableau mark class -> Power BI visual type, by chart orientation.
+_VERTICAL_TYPE = {"Bar": "clusteredColumnChart", "Line": "lineChart", "Area": "areaChart"}
+_HORIZONTAL_TYPE = {"Bar": "clusteredBarChart", "Line": "lineChart", "Area": "areaChart"}
+_TABLE_MARKS = {"Text", "Square"}
 
 # Page canvas is 1920x1080; place one visual with a margin.
 _VISUAL_BOX = {"x": 40.0, "y": 40.0, "width": 1840.0, "height": 1000.0}
@@ -70,40 +64,51 @@ def _map_worksheet(
     calc_display: dict[str, str],
     report: MigrationReport,
 ) -> PBIVisual | None:
-    def resolve(ref: TableauFieldRef) -> PBIFieldRef | None:
-        return _resolve_field(ref, column_table, measure_table, calc_display)
+    def resolve_all(refs) -> list[PBIFieldRef]:
+        return [f for r in refs if (f := _resolve_field(r, column_table, measure_table, calc_display))]
 
-    shelf_fields = [f for ref in (*ws.rows, *ws.cols) if (f := resolve(ref)) is not None]
-    if not shelf_fields:
-        return None
+    row_dims, row_measures = _split(resolve_all(ws.rows))
+    col_dims, col_measures = _split(resolve_all(ws.cols))
+    color_dims, _ = _split(
+        [f for e in ws.encodings if e.kind == "color" for f in resolve_all([e.field])]
+    )
+    measures = row_measures + col_measures
 
-    dimensions = [f for f in shelf_fields if f.kind is FieldKind.COLUMN]
-    measures = [f for f in shelf_fields if f.kind is not FieldKind.COLUMN]
-    series = [
-        f
-        for enc in ws.encodings
-        if enc.kind == "color" and (f := resolve(enc.field)) is not None and f.kind is FieldKind.COLUMN
-    ]
+    # A text/table mark, or a sheet with no measures, becomes a table.
+    if ws.mark_class in _TABLE_MARKS or not measures:
+        values = [*row_dims, *col_dims, *row_measures, *col_measures]
+        return PBIVisual(name=_new_id(), visual_type="tableEx", wells={"Values": values}, **_VISUAL_BOX) if values else None
 
-    visual_type = _visual_type(ws.mark_class, dimensions, measures)
-    if visual_type == "tableEx":
-        wells = {"Values": [*dimensions, *measures]}
+    # Tableau convention: cols = X axis, rows = Y axis. A measure on cols -> horizontal bars.
+    horizontal = bool(col_measures) and not row_measures
+    if horizontal:
+        axis, values, trellis = row_dims, col_measures, col_dims
+        visual_type = _HORIZONTAL_TYPE.get(ws.mark_class, "clusteredBarChart")
     else:
-        wells = {"Category": dimensions, "Y": measures}
-        if series:
-            wells["Series"] = series
-    wells = {name: fields for name, fields in wells.items() if fields}
+        axis, values, trellis = col_dims, (row_measures or col_measures), row_dims
+        visual_type = _VERTICAL_TYPE.get(ws.mark_class, "clusteredColumnChart")
 
-    if not any(wells.values()):
+    series = [*trellis, *color_dims]
+    wells = {"Category": axis, "Y": values, "Series": series}
+    wells = {name: fields for name, fields in wells.items() if fields}
+    if not wells:
         return None
 
     return PBIVisual(
         name=_new_id(),
         visual_type=visual_type,
-        tab_order=0,
         wells=wells,
+        sort_field=values[0] if values else None,
         **_VISUAL_BOX,
     )
+
+
+def _split(fields: list[PBIFieldRef]) -> tuple[list[PBIFieldRef], list[PBIFieldRef]]:
+    """Partition resolved fields into (dimensions, measures)."""
+
+    dims = [f for f in fields if f.kind is FieldKind.COLUMN]
+    measures = [f for f in fields if f.kind is not FieldKind.COLUMN]
+    return dims, measures
 
 
 def _resolve_field(
@@ -130,16 +135,6 @@ def _resolve_field(
         return PBIFieldRef(entity=column_table[name], property=name, kind=FieldKind.COLUMN)
 
     return None
-
-
-def _visual_type(mark_class: str, dimensions: list, measures: list) -> str:
-    mapped = _MARK_TO_VISUAL.get(mark_class)
-    if mapped:
-        return mapped
-    # 'Automatic' or unknown mark: infer from the field composition.
-    if dimensions and measures:
-        return "clusteredColumnChart"
-    return "tableEx"
 
 
 def _calc_display_map(workbook: TableauWorkbook) -> dict[str, str]:

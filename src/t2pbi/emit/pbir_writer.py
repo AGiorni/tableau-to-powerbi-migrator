@@ -27,6 +27,17 @@ def build_visual_json(visual: PBIVisual) -> dict:
                                for i, f in enumerate(fields)]}
         for well, fields in visual.wells.items()
     }
+    query: dict = {"queryState": query_state}
+    if visual.sort_field is not None:
+        query["sortDefinition"] = {
+            "sort": [
+                {
+                    "field": _field_expr(visual.sort_field),
+                    "direction": "Descending" if visual.sort_descending else "Ascending",
+                }
+            ],
+            "isDefaultSort": True,
+        }
     return {
         "$schema": f"{_SCHEMA_BASE}/item/report/definition/visualContainer/2.12.0/schema.json",
         "name": visual.name,
@@ -40,7 +51,7 @@ def build_visual_json(visual: PBIVisual) -> dict:
         },
         "visual": {
             "visualType": visual.visual_type,
-            "query": {"queryState": query_state},
+            "query": query,
             "drillFilterOtherVisuals": True,
         },
     }

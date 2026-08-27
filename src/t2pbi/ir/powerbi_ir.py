@@ -151,6 +151,8 @@ class PBIVisual(BaseModel):
     tab_order: int = 0
     # Field well name (e.g. 'Category', 'Y', 'Series', 'Values') -> its projected fields.
     wells: dict[str, list[PBIFieldRef]] = Field(default_factory=dict)
+    sort_field: PBIFieldRef | None = Field(default=None, description="Field to sort the visual by.")
+    sort_descending: bool = True
 
 
 class PBIReportPage(BaseModel):

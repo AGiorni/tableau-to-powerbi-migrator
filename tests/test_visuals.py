@@ -64,8 +64,15 @@ def test_map_visuals_book1_if_present():
 
     sales_cat = by_name["Sales by Category"].visuals[0]
     assert sales_cat.visual_type == "areaChart"
-    # Category well holds the dimension; Y holds an aggregated measure.
-    cat_props = {f.property for f in sales_cat.wells.get("Category", [])}
-    assert "Category" in cat_props
-    y_fields = sales_cat.wells.get("Y", [])
-    assert any(f.property == "Sales" and f.kind is FieldKind.AGGREGATION for f in y_fields)
+    # cols=Order Date -> X axis (Category well); rows Sales -> Y; Category dim -> Series.
+    assert {f.property for f in sales_cat.wells.get("Category", [])} == {"Order Date"}
+    assert any(
+        f.property == "Sales" and f.kind is FieldKind.AGGREGATION
+        for f in sales_cat.wells.get("Y", [])
+    )
+    assert {f.property for f in sales_cat.wells.get("Series", [])} == {"Category"}
+
+    # Profit-ratio-by-city: measure on cols -> horizontal bar, City on the axis.
+    city = by_name["Tooltip: Profit Ratio by City"].visuals[0]
+    assert city.visual_type == "clusteredBarChart"
+    assert {f.property for f in city.wells.get("Category", [])} == {"City"}
