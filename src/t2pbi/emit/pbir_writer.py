@@ -12,13 +12,14 @@ _SCHEMA_BASE = "https://developer.microsoft.com/json-schemas/fabric"
 
 # Aggregation Function enum -> (queryRef short name, nativeQueryRef label).
 # queryRef short name + display label per QueryAggregateFunction enum (official PBIR docs).
+# Function 2 is the "Count" enum (distinct count in the UI); 5 is "CountNonNull" (plain count).
 _FUNC_NAMES = {
     0: ("Sum", "Sum"),
     1: ("Avg", "Average"),
-    2: ("CountDistinct", "Count (Distinct)"),
+    2: ("Count", "Distinct Count"),
     3: ("Min", "Min"),
     4: ("Max", "Max"),
-    5: ("Count", "Count"),
+    5: ("CountNonNull", "Count"),
     6: ("Median", "Median"),
 }
 
@@ -51,12 +52,32 @@ def build_visual_json(visual: PBIVisual) -> dict:
             "width": visual.width,
             "tabOrder": visual.tab_order,
         },
-        "visual": {
-            "visualType": visual.visual_type,
-            "query": query,
-            "drillFilterOtherVisuals": True,
-        },
+        "visual": _visual_body(visual, query),
     }
+
+
+def _visual_body(visual: PBIVisual, query: dict) -> dict:
+    body: dict = {
+        "visualType": visual.visual_type,
+        "query": query,
+        "drillFilterOtherVisuals": True,
+    }
+    if visual.title:
+        body["visualContainerObjects"] = {
+            "title": [
+                {
+                    "properties": {
+                        "show": _literal("true"),
+                        "text": _literal(f"'{visual.title.replace(chr(39), chr(39) * 2)}'"),
+                    }
+                }
+            ]
+        }
+    return body
+
+
+def _literal(value: str) -> dict:
+    return {"expr": {"Literal": {"Value": value}}}
 
 
 def build_page_json(page: PBIReportPage) -> dict:

@@ -78,7 +78,11 @@ def _map_worksheet(
     # A text/table mark, or a sheet with no measures, becomes a table.
     if ws.mark_class in _TABLE_MARKS or not measures:
         values = [*row_dims, *col_dims, *row_measures, *col_measures]
-        return PBIVisual(name=_new_id(), visual_type="tableEx", wells={"Values": values}, **_VISUAL_BOX) if values else None
+        if not values:
+            return None
+        return PBIVisual(
+            name=_new_id(), visual_type="tableEx", title=ws.name, wells={"Values": values}, **_VISUAL_BOX
+        )
 
     # Tableau convention: cols = X axis, rows = Y axis. A measure on cols -> horizontal bars.
     horizontal = bool(col_measures) and not row_measures
@@ -104,6 +108,7 @@ def _map_worksheet(
     return PBIVisual(
         name=_new_id(),
         visual_type=visual_type,
+        title=ws.name,
         wells=wells,
         sort_field=values[0] if values else None,
         **_VISUAL_BOX,

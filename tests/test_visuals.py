@@ -38,6 +38,16 @@ def test_visual_json_shapes_match_reference():
     assert y["nativeQueryRef"] == "Sum of Sales"
 
 
+def test_visual_title_emitted_from_name():
+    visual = PBIVisual(
+        name="v1",
+        visual_type="clusteredColumnChart",
+        title="Sales by Category",
+        wells={"Category": [PBIFieldRef(entity="Orders", property="Category")]},
+    )
+    title = build_visual_json(visual)["visual"]["visualContainerObjects"]["title"][0]
+    assert title["properties"]["text"]["expr"]["Literal"]["Value"] == "'Sales by Category'"
+
 def test_measure_field_expr():
     visual = PBIVisual(
         name="v",

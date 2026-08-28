@@ -134,7 +134,7 @@ class PBIFieldRef(BaseModel):
     entity: str = Field(description="Owning table name.")
     property: str = Field(description="Column or measure name.")
     kind: FieldKind = FieldKind.COLUMN
-    # Aggregation function enum (0=Sum,1=Avg,2=Min,3=Max,4=Count) when kind is AGGREGATION.
+    # QueryAggregateFunction enum (0=Sum,1=Avg,2=Count[distinct],3=Min,4=Max,5=CountNonNull,6=Median).
     function: int | None = None
 
 
@@ -143,6 +143,7 @@ class PBIVisual(BaseModel):
 
     name: str = Field(description="20-char identifier used as the visual folder/name.")
     visual_type: str = Field(description="e.g. 'clusteredColumnChart', 'tableEx', 'lineChart'.")
+    title: str | None = Field(default=None, description="Visual title shown above the chart.")
     x: float = 0
     y: float = 0
     z: int = 0
