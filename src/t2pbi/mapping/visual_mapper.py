@@ -19,8 +19,9 @@ from t2pbi.ir.powerbi_ir import (
 from t2pbi.ir.tableau_ir import TableauFieldRef, TableauWorkbook, TableauWorksheet
 from t2pbi.mapping.report import IssueSeverity, MigrationReport
 
-# Tableau aggregation code -> Power BI aggregation Function enum.
-_AGG_FUNCTION = {"sum": 0, "avg": 1, "min": 2, "max": 3, "cnt": 4, "count": 4, "cntd": 5}
+# Tableau aggregation code -> Power BI QueryAggregateFunction enum.
+# 0=Sum,1=Average,2=DistinctCount,3=Min,4=Max,5=Count,6=Median (per official PBIR docs).
+_AGG_FUNCTION = {"sum": 0, "avg": 1, "cntd": 2, "min": 3, "max": 4, "cnt": 5, "count": 5, "median": 6}
 
 # Tableau mark class -> Power BI visual type, by chart orientation.
 _VERTICAL_TYPE = {"Bar": "clusteredColumnChart", "Line": "lineChart", "Area": "areaChart"}
@@ -88,8 +89,14 @@ def _map_worksheet(
         axis, values, trellis = col_dims, (row_measures or col_measures), row_dims
         visual_type = _VERTICAL_TYPE.get(ws.mark_class, "clusteredColumnChart")
 
-    series = [*trellis, *color_dims]
-    wells = {"Category": axis, "Y": values, "Series": series}
+    # Trellis dims (a dimension sharing the measure's shelf) become true small multiples;
+    # a colour-encoding dimension becomes an overlaid legend series.
+    wells = {
+        "Category": axis,
+        "Y": values,
+        "SmallMultiples": trellis,
+        "Series": color_dims,
+    }
     wells = {name: fields for name, fields in wells.items() if fields}
     if not wells:
         return None

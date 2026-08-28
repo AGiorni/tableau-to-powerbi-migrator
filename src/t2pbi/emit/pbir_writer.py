@@ -11,13 +11,15 @@ from t2pbi.ir.powerbi_ir import FieldKind, PBIFieldRef, PBIReportPage, PBIVisual
 _SCHEMA_BASE = "https://developer.microsoft.com/json-schemas/fabric"
 
 # Aggregation Function enum -> (queryRef short name, nativeQueryRef label).
+# queryRef short name + display label per QueryAggregateFunction enum (official PBIR docs).
 _FUNC_NAMES = {
     0: ("Sum", "Sum"),
     1: ("Avg", "Average"),
-    2: ("Min", "Min"),
-    3: ("Max", "Max"),
-    4: ("Count", "Count"),
-    5: ("CountDistinct", "Count (Distinct)"),
+    2: ("CountDistinct", "Count (Distinct)"),
+    3: ("Min", "Min"),
+    4: ("Max", "Max"),
+    5: ("Count", "Count"),
+    6: ("Median", "Median"),
 }
 
 
