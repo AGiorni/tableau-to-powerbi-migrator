@@ -74,13 +74,13 @@ def test_map_visuals_book1_if_present():
 
     sales_cat = by_name["Sales by Category"].visuals[0]
     assert sales_cat.visual_type == "areaChart"
-    # cols=Order Date -> X axis (Category well); rows Sales -> Y; Category dim -> SmallMultiples.
+    # cols=Order Date -> X axis (Category well); rows Sales -> Y; Category dim -> Rows (small multiples).
     assert {f.property for f in sales_cat.wells.get("Category", [])} == {"Order Date"}
     assert any(
         f.property == "Sales" and f.kind is FieldKind.AGGREGATION
         for f in sales_cat.wells.get("Y", [])
     )
-    assert {f.property for f in sales_cat.wells.get("SmallMultiples", [])} == {"Category"}
+    assert {f.property for f in sales_cat.wells.get("Rows", [])} == {"Category"}
 
     # Profit-ratio-by-city: measure on cols -> horizontal bar, City on the axis.
     city = by_name["Tooltip: Profit Ratio by City"].visuals[0]

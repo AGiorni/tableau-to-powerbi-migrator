@@ -95,10 +95,11 @@ def _map_worksheet(
 
     # Trellis dims (a dimension sharing the measure's shelf) become true small multiples;
     # a colour-encoding dimension becomes an overlaid legend series.
+    # The small-multiples query role is "Rows" (displayName "Small multiples") per catalog metadata.
     wells = {
         "Category": axis,
         "Y": values,
-        "SmallMultiples": trellis,
+        "Rows": trellis,
         "Series": color_dims,
     }
     wells = {name: fields for name, fields in wells.items() if fields}
