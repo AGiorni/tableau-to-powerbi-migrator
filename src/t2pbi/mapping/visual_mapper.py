@@ -18,6 +18,13 @@ from t2pbi.ir.powerbi_ir import (
 )
 from t2pbi.ir.tableau_ir import TableauFieldRef, TableauWorkbook, TableauWorksheet
 from t2pbi.mapping.report import IssueSeverity, MigrationReport
+from t2pbi.mapping.visual_catalog import enforce_wells
+from t2pbi.mapping.visual_decision import (
+    Ambiguity,
+    DefaultRouter,
+    MappingDecision,
+    VisualRouter,
+)
 
 # Tableau aggregation code -> Power BI QueryAggregateFunction enum.
 # 0=Sum,1=Average,2=DistinctCount,3=Min,4=Max,5=Count,6=Median (per official PBIR docs).
@@ -33,18 +40,27 @@ _VISUAL_BOX = {"x": 40.0, "y": 40.0, "width": 1840.0, "height": 1000.0}
 
 
 def map_visuals(
-    workbook: TableauWorkbook, model: PBIModel, report: MigrationReport
+    workbook: TableauWorkbook,
+    model: PBIModel,
+    report: MigrationReport,
+    router: VisualRouter | None = None,
 ) -> list[PBIReportPage]:
-    """Build one report page per worksheet. Worksheets with no mappable fields are skipped."""
+    """Build one report page per worksheet. Worksheets with no mappable fields are skipped.
 
+    Deterministic rules decide each worksheet's mapping; ambiguous ones are handed to ``router``
+    (default: keep the rule-based guess and flag it). Every mapping is then checked against the
+    visual catalog so only roles the visual supports are emitted.
+    """
+
+    router = router or DefaultRouter()
     column_table = {c.name: t.name for t in model.tables for c in t.columns}
     measure_table = {m.name: t.name for t in model.tables for m in t.measures}
     calc_display = _calc_display_map(workbook)
 
     pages: list[PBIReportPage] = []
     for ws in workbook.worksheets:
-        visual = _map_worksheet(ws, column_table, measure_table, calc_display, report)
-        if visual is None:
+        decision = _map_worksheet(ws, column_table, measure_table, calc_display)
+        if decision is None:
             report.add(
                 IssueSeverity.WARNING,
                 "visual",
@@ -52,10 +68,52 @@ def map_visuals(
                 "Worksheet had no mappable fields (e.g. a map or Measure Names sheet); skipped.",
             )
             continue
+
+        if decision.ambiguity is not None:
+            reasons = "; ".join(decision.ambiguity.reasons)
+            decision = router.resolve(decision)
+            report.add(
+                IssueSeverity.INFO,
+                "visual",
+                ws.name,
+                f"Ambiguous mapping ({reasons}); used {decision.source.value} choice "
+                f"'{decision.visual_type}'. Review recommended.",
+            )
+
+        wells, warnings = enforce_wells(decision.visual_type, decision.wells)
+        for warning in warnings:
+            report.add(IssueSeverity.WARNING, "visual", ws.name, warning)
+        if not wells:
+            report.add(
+                IssueSeverity.WARNING,
+                "visual",
+                ws.name,
+                "No valid field wells after catalog validation; skipped.",
+            )
+            continue
+
         pages.append(
-            PBIReportPage(name=_new_id(), display_name=ws.name, visuals=[visual])
+            PBIReportPage(
+                name=_new_id(),
+                display_name=ws.name,
+                visuals=[_to_visual(decision, wells, ws.name)],
+            )
         )
     return pages
+
+
+def _to_visual(
+    decision: MappingDecision, wells: dict[str, list[PBIFieldRef]], title: str
+) -> PBIVisual:
+    return PBIVisual(
+        name=_new_id(),
+        visual_type=decision.visual_type,
+        title=title,
+        wells=wells,
+        sort_field=decision.sort_field,
+        sort_descending=decision.sort_descending,
+        **_VISUAL_BOX,
+    )
 
 
 def _map_worksheet(
@@ -63,8 +121,7 @@ def _map_worksheet(
     column_table: dict[str, str],
     measure_table: dict[str, str],
     calc_display: dict[str, str],
-    report: MigrationReport,
-) -> PBIVisual | None:
+) -> MappingDecision | None:
     def resolve_all(refs) -> list[PBIFieldRef]:
         return [f for r in refs if (f := _resolve_field(r, column_table, measure_table, calc_display))]
 
@@ -80,8 +137,10 @@ def _map_worksheet(
         values = [*row_dims, *col_dims, *row_measures, *col_measures]
         if not values:
             return None
-        return PBIVisual(
-            name=_new_id(), visual_type="tableEx", title=ws.name, wells={"Values": values}, **_VISUAL_BOX
+        return MappingDecision(
+            visual_type="tableEx",
+            wells={"Values": values},
+            rationale="Text/square mark or no measure on shelves -> table.",
         )
 
     # Tableau convention: cols = X axis, rows = Y axis. A measure on cols -> horizontal bars.
@@ -93,9 +152,8 @@ def _map_worksheet(
         axis, values, trellis = col_dims, (row_measures or col_measures), row_dims
         visual_type = _VERTICAL_TYPE.get(ws.mark_class, "clusteredColumnChart")
 
-    # Trellis dims (a dimension sharing the measure's shelf) become true small multiples;
-    # a colour-encoding dimension becomes an overlaid legend series.
-    # The small-multiples query role is "Rows" (displayName "Small multiples") per catalog metadata.
+    # Trellis dims (a dimension sharing the measure's shelf) default to small multiples ("Rows");
+    # a colour-encoding dimension becomes an overlaid legend series ("Series").
     wells = {
         "Category": axis,
         "Y": values,
@@ -106,14 +164,50 @@ def _map_worksheet(
     if not wells:
         return None
 
-    return PBIVisual(
-        name=_new_id(),
+    # A dimension sharing the measure's shelf could be small multiples (Rows) or a legend (Series).
+    ambiguity = None
+    if trellis:
+        names = ", ".join(f.property for f in trellis)
+        reason = (
+            f"dimension(s) [{names}] share the measure's shelf: "
+            "small multiples (Rows) vs legend (Series)"
+        )
+        ambiguity = Ambiguity(
+            reasons=[reason],
+            candidates=[visual_type],
+            features=_worksheet_features(ws, row_dims, col_dims, row_measures, col_measures, color_dims),
+        )
+
+    return MappingDecision(
         visual_type=visual_type,
-        title=ws.name,
         wells=wells,
         sort_field=values[0] if values else None,
-        **_VISUAL_BOX,
+        rationale="cols=X (Category), rows=Y; trellis->Rows, colour->Series.",
+        ambiguity=ambiguity,
     )
+
+
+def _worksheet_features(
+    ws: TableauWorksheet,
+    row_dims: list[PBIFieldRef],
+    col_dims: list[PBIFieldRef],
+    row_measures: list[PBIFieldRef],
+    col_measures: list[PBIFieldRef],
+    color_dims: list[PBIFieldRef],
+) -> dict:
+    """Compact, LLM-friendly summary of a worksheet's shelves for a router to reason over."""
+
+    def names(fields: list[PBIFieldRef]) -> list[str]:
+        return [f.property for f in fields]
+
+    return {
+        "mark_class": ws.mark_class,
+        "row_dims": names(row_dims),
+        "col_dims": names(col_dims),
+        "row_measures": names(row_measures),
+        "col_measures": names(col_measures),
+        "color_dims": names(color_dims),
+    }
 
 
 def _split(fields: list[PBIFieldRef]) -> tuple[list[PBIFieldRef], list[PBIFieldRef]]:
