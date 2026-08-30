@@ -60,7 +60,10 @@ def translate_expressions_node(state: PipelineState) -> PipelineState:
 
 def map_visuals_node(state: PipelineState) -> PipelineState:
     assert state.workbook is not None and state.model is not None
-    state.pages = map_visuals(state.workbook, state.model, state.report)
+    from t2pbi.mapping.visual_router_llm import LLMVisualRouter
+
+    router = LLMVisualRouter(state.chat_model) if state.chat_model is not None else None
+    state.pages = map_visuals(state.workbook, state.model, state.report, router=router)
     return state
 
 
