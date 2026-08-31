@@ -115,3 +115,23 @@ def test_dashboard_page_with_slicers_book1_if_present():
     charts = [v for v in exec_page.visuals if v.visual_type != "slicer"]
     assert charts and any(v.x > 100 for v in charts)
 
+
+def test_kpi_measure_values_table_book1_if_present():
+    if not _BOOK1.exists():
+        return
+
+    workbook = parse_workbook(load_workbook(_BOOK1))
+    kpi_ws = next(w for w in workbook.worksheets if w.name == "Key Performance Indicators")
+    assert kpi_ws.measure_names  # measures captured from the Measure Names filter
+
+    model = map_model(workbook).model
+    pages = map_visuals(workbook, model, MigrationReport())
+    by_name = {p.display_name: p for p in pages}
+    assert "Key Performance Indicators" in by_name
+
+    kpi = by_name["Key Performance Indicators"].visuals[0]
+    assert kpi.visual_type == "tableEx"
+    props = {f.property for f in kpi.wells["Values"]}
+    assert {"Discount", "Profit", "Sales", "profit ratio"} <= props
+
+

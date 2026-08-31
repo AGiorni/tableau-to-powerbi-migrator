@@ -406,7 +406,23 @@ def _parse_worksheet(ws_el: etree._Element) -> TableauWorksheet:
         rows=rows,
         cols=cols,
         encodings=encodings,
+        measure_names=_parse_measure_names(ws_el),
     )
+
+
+def _parse_measure_names(ws_el: etree._Element) -> list[TableauFieldRef]:
+    """Extract the measures listed by a ``[:Measure Names]`` filter (a Measure Values table)."""
+
+    refs: list[TableauFieldRef] = []
+    for flt in ws_el.findall(".//filter"):
+        if not (flt.get("column") or "").endswith("[:Measure Names]"):
+            continue
+        for member_el in flt.findall(".//groupfilter[@function='member']"):
+            member = (member_el.get("member") or "").strip().strip('"')
+            if (ref := _parse_field_ref(member)) is not None:
+                refs.append(ref)
+        break
+    return refs
 
 
 def _parse_shelf(text: str | None) -> list[TableauFieldRef]:

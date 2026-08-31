@@ -205,17 +205,18 @@ def _map_worksheet(
     color_dims, _ = _split(
         [f for e in ws.encodings if e.kind == "color" for f in resolve_all([e.field])]
     )
-    measures = row_measures + col_measures
+    measure_values = resolve_all(ws.measure_names)
+    shelf_measures = row_measures + col_measures
 
-    # A text/table mark, or a sheet with no measures, becomes a table.
-    if ws.mark_class in _TABLE_MARKS or not measures:
-        values = [*row_dims, *col_dims, *row_measures, *col_measures]
+    # A Measure Names/Measure Values sheet, a text/square mark, or a sheet with no measures -> table.
+    if ws.measure_names or ws.mark_class in _TABLE_MARKS or not shelf_measures:
+        values = _dedup([*row_dims, *col_dims, *shelf_measures, *measure_values])
         if not values:
             return None
         return MappingDecision(
             visual_type="tableEx",
             wells={"Values": values},
-            rationale="Text/square mark or no measure on shelves -> table.",
+            rationale="Measure Values table or text/no-measure mark -> table.",
         )
 
     # Tableau convention: cols = X axis, rows = Y axis. A measure on cols -> horizontal bars.
@@ -291,6 +292,19 @@ def _split(fields: list[PBIFieldRef]) -> tuple[list[PBIFieldRef], list[PBIFieldR
     dims = [f for f in fields if f.kind is FieldKind.COLUMN]
     measures = [f for f in fields if f.kind is not FieldKind.COLUMN]
     return dims, measures
+
+
+def _dedup(fields: list[PBIFieldRef]) -> list[PBIFieldRef]:
+    """Drop duplicate field references, preserving order."""
+
+    seen: set[tuple[str, str, FieldKind, int | None]] = set()
+    out: list[PBIFieldRef] = []
+    for f in fields:
+        key = (f.entity, f.property, f.kind, f.function)
+        if key not in seen:
+            seen.add(key)
+            out.append(f)
+    return out
 
 
 def _resolve_field(

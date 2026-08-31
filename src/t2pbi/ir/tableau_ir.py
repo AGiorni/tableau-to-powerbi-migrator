@@ -172,6 +172,8 @@ class TableauWorksheet(BaseModel):
     rows: list[TableauFieldRef] = Field(default_factory=list)
     cols: list[TableauFieldRef] = Field(default_factory=list)
     encodings: list[TableauEncoding] = Field(default_factory=list)
+    # Measures listed by a Measure Names filter (a Measure Names/Measure Values table).
+    measure_names: list[TableauFieldRef] = Field(default_factory=list)
 
 
 class TableauDashboardZone(BaseModel):
