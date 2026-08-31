@@ -73,12 +73,14 @@ def build_file_map(model: PBIModel, pages: list[PBIReportPage] | None = None) ->
     files[".gitignore"] = "**/.pbi/localSettings.json\n**/.pbi/cache.abf\n"
 
     # Semantic model.
+    files[f"{name}.SemanticModel/.platform"] = _json(_platform(name, "SemanticModel"))
     files[f"{name}.SemanticModel/definition.pbism"] = _json(_pbism())
     for rel, content in render_semantic_model(model).items():
         files[f"{name}.SemanticModel/definition/{rel}"] = content
 
     # Report: one page per migrated worksheet, or a single blank page when there are none.
     report_pages = pages or [_blank_page()]
+    files[f"{name}.Report/.platform"] = _json(_platform(name, "Report"))
     files[f"{name}.Report/definition.pbir"] = _json(_pbir(name))
     files[f"{name}.Report/definition/version.json"] = _json(_report_version())
     files[f"{name}.Report/definition/report.json"] = _json(_report())
@@ -112,6 +114,15 @@ def _pbism() -> dict:
         "$schema": f"{_SCHEMA_BASE}/item/semanticModel/definitionProperties/1.0.0/schema.json",
         "version": "4.0",
         "settings": {},
+    }
+
+
+def _platform(name: str, item_type: str) -> dict:
+    # Fabric/PBIP item metadata; required for the project to validate and for Git integration.
+    return {
+        "$schema": f"{_SCHEMA_BASE}/gitIntegration/platformProperties/2.0.0/schema.json",
+        "metadata": {"type": item_type, "displayName": name},
+        "config": {"version": "2.0", "logicalId": str(uuid.uuid4())},
     }
 
 
