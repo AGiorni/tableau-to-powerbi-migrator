@@ -24,6 +24,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip LLM expression translation (deterministic path only).",
     )
     migrate.add_argument(
+        "--no-validate",
+        action="store_true",
+        help="Skip the powerbi-report-author PBIR validation gate after assembly.",
+    )
+    migrate.add_argument(
         "--report",
         help="Optional path to write the migration report as JSON.",
     )
@@ -38,7 +43,9 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_migrate(args: argparse.Namespace) -> int:
     chat_model = None if args.no_llm else build_chat_model()
-    result = run_migration(args.input, args.out, chat_model=chat_model)
+    result = run_migration(
+        args.input, args.out, chat_model=chat_model, preflight=not args.no_validate
+    )
 
     print(f"Wrote project: {result.pbip_path}")
     errors = [i for i in result.report.issues if i.severity.value == "error"]

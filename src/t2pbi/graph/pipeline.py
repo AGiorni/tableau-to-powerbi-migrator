@@ -30,10 +30,13 @@ def run_migration(
     input_path: str,
     out_dir: str,
     chat_model: Any | None = None,
+    preflight: bool = False,
 ) -> MigrationResult:
     """Run all pipeline stages in order and return the result."""
 
-    state = PipelineState(input_path=input_path, out_dir=out_dir, chat_model=chat_model)
+    state = PipelineState(
+        input_path=input_path, out_dir=out_dir, chat_model=chat_model, preflight=preflight
+    )
     for stage in STAGES:
         state = stage(state)
 

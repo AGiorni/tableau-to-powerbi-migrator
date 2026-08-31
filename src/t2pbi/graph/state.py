@@ -26,6 +26,7 @@ class PipelineState:
     input_path: str
     out_dir: str
     chat_model: Any | None = None
+    preflight: bool = False  # run the powerbi-report-author validate gate after assembly
 
     workbook: TableauWorkbook | None = None
     model: PBIModel | None = None
@@ -95,6 +96,42 @@ def assemble_node(state: PipelineState) -> PipelineState:
     return state
 
 
+def preflight_validate_node(state: PipelineState) -> PipelineState:
+    """Validate the emitted PBIP with powerbi-report-author and fold diagnostics into the report."""
+
+    if not state.preflight or state.pbip_path is None:
+        return state
+    from t2pbi.mapping.report import IssueSeverity
+    from t2pbi.validate.pbir_cli import iter_findings, run_pbir_validation
+
+    result = run_pbir_validation(state.pbip_path)
+    if result is None:
+        state.report.add(
+            IssueSeverity.INFO,
+            "preflight",
+            "validator",
+            "powerbi-report-author not available; skipped PBIR validation gate.",
+        )
+        return state
+
+    severities = {
+        "error": IssueSeverity.ERROR,
+        "warning": IssueSeverity.WARNING,
+        "info": IssueSeverity.INFO,
+    }
+    for severity, code, message in iter_findings(result):
+        state.report.add(severities.get(severity, IssueSeverity.WARNING), "preflight", code, message)
+
+    state.report.add(
+        IssueSeverity.INFO,
+        "preflight",
+        "validator",
+        f"PBIR validation: {result.get('result', 'unknown')} "
+        f"({result.get('errorCount', 0)} error(s), {result.get('warningCount', 0)} warning(s)).",
+    )
+    return state
+
+
 STAGES = (
     ingest_node,
     map_model_node,
@@ -102,4 +139,5 @@ STAGES = (
     map_visuals_node,
     validate_node,
     assemble_node,
+    preflight_validate_node,
 )
