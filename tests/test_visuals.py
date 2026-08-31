@@ -135,3 +135,22 @@ def test_kpi_measure_values_table_book1_if_present():
     assert {"Discount", "Profit", "Sales", "profit ratio"} <= props
 
 
+def test_map_worksheet_book1_if_present():
+    if not _BOOK1.exists():
+        return
+
+    workbook = parse_workbook(load_workbook(_BOOK1))
+    geo = next(w for w in workbook.worksheets if w.name == "profit ratio by geography")
+    assert geo.is_map
+
+    model = map_model(workbook).model
+    pages = map_visuals(workbook, model, MigrationReport())
+    by_name = {p.display_name: p for p in pages}
+    assert "profit ratio by geography" in by_name
+
+    geo_visual = by_name["profit ratio by geography"].visuals[0]
+    assert geo_visual.visual_type == "azureMap"
+    assert {f.property for f in geo_visual.wells["Category"]} >= {"State/Province"}
+    assert geo_visual.wells.get("Size")  # a measure sizes the map
+
+

@@ -40,6 +40,16 @@ _VERTICAL_TYPE = {"Bar": "clusteredColumnChart", "Line": "lineChart", "Area": "a
 _HORIZONTAL_TYPE = {"Bar": "clusteredBarChart", "Line": "lineChart", "Area": "areaChart"}
 _TABLE_MARKS = {"Text", "Square"}
 
+# Marks with a deterministic chart rule; other marks are routed to the router as unmatched.
+_RECOGNIZED_MARKS = set(_VERTICAL_TYPE) | {"Automatic"}
+
+# Visual types the router may choose from for a worksheet no deterministic rule could map.
+_FALLBACK_CANDIDATES = (
+    "clusteredColumnChart", "clusteredBarChart", "lineChart", "areaChart",
+    "pieChart", "donutChart", "scatterChart", "tableEx", "pivotTable",
+    "cardVisual", "gauge", "treemap", "funnel", "waterfallChart", "ribbonChart", "azureMap",
+)
+
 # Page canvas is 1920x1080; place one visual with a margin.
 _VISUAL_BOX = {"x": 40.0, "y": 40.0, "width": 1840.0, "height": 1000.0}
 
@@ -78,11 +88,20 @@ def map_visuals(
         if decision.ambiguity is not None:
             reasons = "; ".join(decision.ambiguity.reasons)
             decision = router.resolve(decision)
+            if not decision.visual_type or not decision.wells:
+                report.add(
+                    IssueSeverity.WARNING,
+                    "visual",
+                    ws.name,
+                    f"No visual could be determined ({reasons}); skipped. "
+                    "Enable an LLM router to migrate unmatched worksheets.",
+                )
+                continue
             report.add(
                 IssueSeverity.INFO,
                 "visual",
                 ws.name,
-                f"Ambiguous mapping ({reasons}); used {decision.source.value} choice "
+                f"Mapping ({reasons}) resolved by {decision.source.value} to "
                 f"'{decision.visual_type}'. Review recommended.",
             )
 
@@ -206,18 +225,29 @@ def _map_worksheet(
         [f for e in ws.encodings if e.kind == "color" for f in resolve_all([e.field])]
     )
     measure_values = resolve_all(ws.measure_names)
+    encoding_fields = [f for e in ws.encodings for f in resolve_all([e.field])]
     shelf_measures = row_measures + col_measures
+    all_fields = _dedup([*row_dims, *col_dims, *shelf_measures, *encoding_fields, *measure_values])
+    features = _worksheet_features(ws, row_dims, col_dims, row_measures, col_measures, color_dims)
+
+    # A geographic worksheet -> map (location = dimensions, measure = size).
+    if ws.is_map:
+        return _map_geographic(all_fields) or _fallback(all_fields, features)
 
     # A Measure Names/Measure Values sheet, a text/square mark, or a sheet with no measures -> table.
     if ws.measure_names or ws.mark_class in _TABLE_MARKS or not shelf_measures:
         values = _dedup([*row_dims, *col_dims, *shelf_measures, *measure_values])
-        if not values:
-            return None
-        return MappingDecision(
-            visual_type="tableEx",
-            wells={"Values": values},
-            rationale="Measure Values table or text/no-measure mark -> table.",
-        )
+        if values:
+            return MappingDecision(
+                visual_type="tableEx",
+                wells={"Values": values},
+                rationale="Measure Values table or text/no-measure mark -> table.",
+            )
+        return _fallback(all_fields, features)
+
+    # An unrecognized mark (e.g. Pie, Circle) has no deterministic rule -> hand to the router.
+    if ws.mark_class not in _RECOGNIZED_MARKS:
+        return _fallback(all_fields, features)
 
     # Tableau convention: cols = X axis, rows = Y axis. A measure on cols -> horizontal bars.
     horizontal = bool(col_measures) and not row_measures
@@ -305,6 +335,39 @@ def _dedup(fields: list[PBIFieldRef]) -> list[PBIFieldRef]:
             seen.add(key)
             out.append(f)
     return out
+
+
+def _map_geographic(all_fields: list[PBIFieldRef]) -> MappingDecision | None:
+    """Build an azureMap: dimensions become the location, the first measure sizes the points."""
+
+    dims = [f for f in all_fields if f.kind is FieldKind.COLUMN]
+    measures = [f for f in all_fields if f.kind is not FieldKind.COLUMN]
+    if not dims:
+        return None
+    wells: dict[str, list[PBIFieldRef]] = {"Category": dims}
+    if measures:
+        wells["Size"] = [measures[0]]
+    return MappingDecision(
+        visual_type="azureMap",
+        wells=wells,
+        rationale="Geographic worksheet -> azureMap (location = dimensions, measure = size).",
+    )
+
+
+def _fallback(all_fields: list[PBIFieldRef], features: dict) -> MappingDecision | None:
+    """A worksheet no rule could map: hand its resolved fields to the router, else skip."""
+
+    if not all_fields:
+        return None
+    return MappingDecision(
+        visual_type="",
+        ambiguity=Ambiguity(
+            reasons=["no deterministic rule matched this worksheet"],
+            candidates=list(_FALLBACK_CANDIDATES),
+            available_fields=all_fields,
+            features=features,
+        ),
+    )
 
 
 def _resolve_field(

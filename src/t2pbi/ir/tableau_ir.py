@@ -174,6 +174,7 @@ class TableauWorksheet(BaseModel):
     encodings: list[TableauEncoding] = Field(default_factory=list)
     # Measures listed by a Measure Names filter (a Measure Names/Measure Values table).
     measure_names: list[TableauFieldRef] = Field(default_factory=list)
+    is_map: bool = Field(default=False, description="Geographic worksheet (map source/geometry).")
 
 
 class TableauDashboardZone(BaseModel):

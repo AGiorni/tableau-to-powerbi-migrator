@@ -42,6 +42,8 @@ class LLMVisualRouter:
             return decision
 
         index = {f.property: f for fields in decision.wells.values() for f in fields}
+        for field in decision.ambiguity.available_fields:
+            index.setdefault(field.property, field)
         parsed = self._ask(decision, index)
         if parsed is None:
             return _as_default(decision)
@@ -49,8 +51,8 @@ class LLMVisualRouter:
         visual_type, wells, rationale, confidence = parsed
         wells, _ = enforce_wells(visual_type, wells)
         spec = VISUAL_CATALOG.get(visual_type)
-        # Reject an empty or under-specified answer; keep the deterministic guess instead.
-        if not wells or (spec and any(not wells.get(r) for r in spec.required)):
+        # Reject an unknown, empty, or under-specified answer; keep the deterministic guess instead.
+        if spec is None or not wells or any(not wells.get(r) for r in spec.required):
             return _as_default(decision)
 
         return decision.model_copy(

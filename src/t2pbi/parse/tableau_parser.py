@@ -407,7 +407,21 @@ def _parse_worksheet(ws_el: etree._Element) -> TableauWorksheet:
         cols=cols,
         encodings=encodings,
         measure_names=_parse_measure_names(ws_el),
+        is_map=_is_map_worksheet(ws_el),
     )
+
+
+def _is_map_worksheet(ws_el: etree._Element) -> bool:
+    """A worksheet is geographic if it has a map source, geometry encoding, or generated lat/long."""
+
+    if ws_el.find(".//mapsources/mapsource") is not None:
+        return True
+    if ws_el.find(".//encodings/geometry") is not None:
+        return True
+    for shelf in (ws_el.findtext(".//rows"), ws_el.findtext(".//cols")):
+        if shelf and "(generated)" in shelf and ("Latitude" in shelf or "Longitude" in shelf):
+            return True
+    return False
 
 
 def _parse_measure_names(ws_el: etree._Element) -> list[TableauFieldRef]:

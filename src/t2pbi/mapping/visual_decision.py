@@ -33,6 +33,9 @@ class Ambiguity(BaseModel):
     candidates: list[str] = Field(
         default_factory=list, description="Alternative visual types worth considering."
     )
+    available_fields: list[PBIFieldRef] = Field(
+        default_factory=list, description="Resolved fields a router may assign when no rule matched."
+    )
     features: dict = Field(
         default_factory=dict, description="Normalized worksheet features a router can reason over."
     )

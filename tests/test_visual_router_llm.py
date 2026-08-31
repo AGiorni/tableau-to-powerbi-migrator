@@ -82,3 +82,25 @@ def test_llm_router_ignores_non_ambiguous_decision():
     resolved = LLMVisualRouter(_FakeChat("{}")).resolve(decision)
 
     assert resolved.source is DecisionSource.RULES
+
+
+def test_llm_router_resolves_unmatched_sheet_from_available_fields():
+    decision = MappingDecision(
+        visual_type="",
+        ambiguity=Ambiguity(
+            reasons=["no deterministic rule matched"],
+            candidates=["pieChart", "tableEx"],
+            available_fields=[
+                PBIFieldRef(entity="Orders", property="Category"),
+                PBIFieldRef(entity="Orders", property="Sales", kind=FieldKind.AGGREGATION, function=0),
+            ],
+        ),
+    )
+    chat = _FakeChat(
+        '{"visual_type":"pieChart","roles":{"Category":["Category"],"Y":["Sales"]},"confidence":0.7}'
+    )
+    resolved = LLMVisualRouter(chat).resolve(decision)
+
+    assert resolved.source is DecisionSource.LLM
+    assert resolved.visual_type == "pieChart"
+    assert {f.property for f in resolved.wells["Category"]} == {"Category"}
