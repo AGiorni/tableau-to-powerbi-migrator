@@ -14,9 +14,16 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from t2pbi.ir.powerbi_ir import PBIFieldRef
+from t2pbi.ir.powerbi_ir import FieldKind, PBIFieldRef
 
 _CATALOG_PATH = Path(__file__).parent / "data" / "visual_catalog.json"
+
+# Which field kinds a role's declared kind accepts (mirrors the validator's role-kind check).
+_ROLE_KIND_OK = {
+    "Grouping": {FieldKind.COLUMN},
+    "Measure": {FieldKind.MEASURE, FieldKind.AGGREGATION},
+    "GroupingOrMeasure": {FieldKind.COLUMN, FieldKind.MEASURE, FieldKind.AGGREGATION},
+}
 
 
 class VisualSpec(BaseModel):
@@ -59,6 +66,18 @@ def enforce_wells(
             names = ", ".join(f.property for f in fields)
             warnings.append(f'Dropped unknown role "{role}" ({names}) for visual "{visual_type}".')
             continue
+        allowed = _ROLE_KIND_OK.get(spec.roles[role])
+        if allowed is not None:
+            kept = [f for f in fields if f.kind in allowed]
+            if len(kept) != len(fields):
+                mismatched = ", ".join(f.property for f in fields if f.kind not in allowed)
+                warnings.append(
+                    f'Dropped field(s) {mismatched} from role "{role}" on "{visual_type}" '
+                    "(role/field kind mismatch)."
+                )
+            fields = kept
+            if not fields:
+                continue
         cap = spec.max_per_role.get(role)
         if cap is not None and len(fields) > cap:
             warnings.append(

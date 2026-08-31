@@ -19,6 +19,7 @@ from t2pbi.ir.tableau_ir import (
     TableauColumn,
     TableauConnection,
     TableauDashboard,
+    TableauDashboardZone,
     TableauDatasource,
     TableauDataType,
     TableauEncoding,
@@ -452,14 +453,35 @@ def _parse_field_ref(ref: str | None) -> TableauFieldRef | None:
 
 
 def _parse_dashboard(db_el: etree._Element) -> TableauDashboard:
-    ws_names = [
-        zone.get("name")
-        for zone in db_el.findall(".//zone")
-        if zone.get("name") and zone.get("type") is None
-    ]
+    zones: list[TableauDashboardZone] = []
+    # Only the primary layout (skip device/phone layouts under ./devicelayouts).
+    primary = db_el.find("./zones")
+    if primary is not None:
+        for z in primary.iter("zone"):
+            type_v2 = z.get("type-v2")
+            name = z.get("name")
+            geom = {
+                "x": int(z.get("x") or 0),
+                "y": int(z.get("y") or 0),
+                "w": int(z.get("w") or 0),
+                "h": int(z.get("h") or 0),
+            }
+            if type_v2 == "filter":
+                zones.append(
+                    TableauDashboardZone(
+                        kind="filter", worksheet=name, field=_parse_field_ref(z.get("param")), **geom
+                    )
+                )
+            elif name and type_v2 is None:  # worksheet zones carry a name and no type-v2
+                zones.append(TableauDashboardZone(kind="worksheet", worksheet=name, **geom))
+
+    worksheet_names = list(
+        dict.fromkeys(z.worksheet for z in zones if z.kind == "worksheet" and z.worksheet)
+    )
     return TableauDashboard(
         name=db_el.get("name") or "",
-        worksheet_names=[n for n in ws_names if n is not None],
+        worksheet_names=worksheet_names,
+        zones=zones,
     )
 
 

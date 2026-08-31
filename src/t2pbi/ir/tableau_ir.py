@@ -174,11 +174,25 @@ class TableauWorksheet(BaseModel):
     encodings: list[TableauEncoding] = Field(default_factory=list)
 
 
+class TableauDashboardZone(BaseModel):
+    """One placed item on a dashboard: an embedded worksheet or a filter (slicer) card."""
+
+    kind: str = Field(description="'worksheet' or 'filter'.")
+    worksheet: str | None = Field(default=None, description="Embedded/target worksheet name.")
+    field: TableauFieldRef | None = Field(default=None, description="Filtered field (filter zones).")
+    # Position/size in Tableau's 100000 x 100000 dashboard grid.
+    x: int = 0
+    y: int = 0
+    w: int = 0
+    h: int = 0
+
+
 class TableauDashboard(BaseModel):
-    """A dashboard. Only high-level facts are captured in Phase 1."""
+    """A dashboard: its layout zones (embedded worksheets and filter cards)."""
 
     name: str
     worksheet_names: list[str] = Field(default_factory=list)
+    zones: list[TableauDashboardZone] = Field(default_factory=list)
 
 
 class TableauWorkbook(BaseModel):

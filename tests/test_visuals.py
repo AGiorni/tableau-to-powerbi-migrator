@@ -86,3 +86,32 @@ def test_map_visuals_book1_if_present():
     city = by_name["Tooltip: Profit Ratio by City"].visuals[0]
     assert city.visual_type == "clusteredBarChart"
     assert {f.property for f in city.wells.get("Category", [])} == {"City"}
+
+
+def test_dashboard_page_with_slicers_book1_if_present():
+    if not _BOOK1.exists():
+        return
+
+    workbook = parse_workbook(load_workbook(_BOOK1))
+    # Dashboard zones are parsed: worksheets + filter cards.
+    dash = workbook.dashboards[0]
+    assert dash.name == "Executive Overview"
+    assert any(z.kind == "worksheet" for z in dash.zones)
+    assert any(z.kind == "filter" for z in dash.zones)
+
+    model = map_model(workbook).model
+    pages = map_visuals(workbook, model, MigrationReport())
+    by_name = {p.display_name: p for p in pages}
+    assert "Executive Overview" in by_name
+
+    exec_page = by_name["Executive Overview"]
+    slicers = [v for v in exec_page.visuals if v.visual_type == "slicer"]
+    # Column filters become slicers; the profit-ratio measure filter does not.
+    assert {v.title for v in slicers} == {"Country/Region", "Order Date"}
+    for slicer in slicers:
+        assert set(slicer.wells) == {"Values"}
+
+    # Embedded worksheet visuals are repositioned to their zone, not the full-page box.
+    charts = [v for v in exec_page.visuals if v.visual_type != "slicer"]
+    assert charts and any(v.x > 100 for v in charts)
+

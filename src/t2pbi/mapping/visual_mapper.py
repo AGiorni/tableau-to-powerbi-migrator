@@ -16,7 +16,12 @@ from t2pbi.ir.powerbi_ir import (
     PBIReportPage,
     PBIVisual,
 )
-from t2pbi.ir.tableau_ir import TableauFieldRef, TableauWorkbook, TableauWorksheet
+from t2pbi.ir.tableau_ir import (
+    TableauDashboardZone,
+    TableauFieldRef,
+    TableauWorkbook,
+    TableauWorksheet,
+)
 from t2pbi.mapping.report import IssueSeverity, MigrationReport
 from t2pbi.mapping.visual_catalog import enforce_wells
 from t2pbi.mapping.visual_decision import (
@@ -58,6 +63,7 @@ def map_visuals(
     calc_display = _calc_display_map(workbook)
 
     pages: list[PBIReportPage] = []
+    by_worksheet: dict[str, PBIVisual] = {}
     for ws in workbook.worksheets:
         decision = _map_worksheet(ws, column_table, measure_table, calc_display)
         if decision is None:
@@ -92,13 +98,13 @@ def map_visuals(
             )
             continue
 
-        pages.append(
-            PBIReportPage(
-                name=_new_id(),
-                display_name=ws.name,
-                visuals=[_to_visual(decision, wells, ws.name)],
-            )
-        )
+        visual = _to_visual(decision, wells, ws.name)
+        by_worksheet[ws.name] = visual
+        pages.append(PBIReportPage(name=_new_id(), display_name=ws.name, visuals=[visual]))
+
+    pages.extend(
+        _map_dashboards(workbook, by_worksheet, column_table, measure_table, calc_display, report)
+    )
     return pages
 
 
@@ -114,6 +120,75 @@ def _to_visual(
         sort_descending=decision.sort_descending,
         **_VISUAL_BOX,
     )
+
+
+# Tableau lays dashboards out on a 100000 x 100000 grid; map it onto the report canvas.
+_DASH_GRID = 100000
+_CANVAS_W = 1920.0
+_CANVAS_H = 1080.0
+
+
+def _map_dashboards(
+    workbook: TableauWorkbook,
+    by_worksheet: dict[str, PBIVisual],
+    column_table: dict[str, str],
+    measure_table: dict[str, str],
+    calc_display: dict[str, str],
+    report: MigrationReport,
+) -> list[PBIReportPage]:
+    """Build one report page per dashboard: worksheet visuals placed by zone, plus filter slicers."""
+
+    pages: list[PBIReportPage] = []
+    for dash in workbook.dashboards:
+        visuals: list[PBIVisual] = []
+        seen_fields: set[tuple[str, str]] = set()
+        for zone in dash.zones:
+            box = _zone_box(zone)
+            if zone.kind == "worksheet":
+                source = by_worksheet.get(zone.worksheet or "")
+                if source is None:
+                    report.add(
+                        IssueSeverity.INFO,
+                        "dashboard",
+                        dash.name,
+                        f"Worksheet '{zone.worksheet}' has no migrated visual; omitted from dashboard.",
+                    )
+                    continue
+                visuals.append(source.model_copy(update={"name": _new_id(), **box}))
+            elif zone.kind == "filter" and zone.field is not None:
+                field = _resolve_field(zone.field, column_table, measure_table, calc_display)
+                if field is None or (field.entity, field.property) in seen_fields:
+                    continue
+                seen_fields.add((field.entity, field.property))
+                if field.kind is not FieldKind.COLUMN:
+                    report.add(
+                        IssueSeverity.INFO,
+                        "dashboard",
+                        dash.name,
+                        f"Filter on measure '{field.property}' not converted to a slicer "
+                        "(slicers require a column).",
+                    )
+                    continue
+                wells, _ = enforce_wells("slicer", {"Values": [field]})
+                if wells:
+                    visuals.append(
+                        PBIVisual(
+                            name=_new_id(), visual_type="slicer", title=field.property,
+                            wells=wells, **box,
+                        )
+                    )
+        if visuals:
+            pages.append(PBIReportPage(name=_new_id(), display_name=dash.name, visuals=visuals))
+    return pages
+
+
+def _zone_box(zone: TableauDashboardZone) -> dict[str, float]:
+    return {
+        "x": zone.x / _DASH_GRID * _CANVAS_W,
+        "y": zone.y / _DASH_GRID * _CANVAS_H,
+        "width": zone.w / _DASH_GRID * _CANVAS_W,
+        "height": zone.h / _DASH_GRID * _CANVAS_H,
+    }
 
 
 def _map_worksheet(
