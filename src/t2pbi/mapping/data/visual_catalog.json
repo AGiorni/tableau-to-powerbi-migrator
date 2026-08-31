@@ -1,0 +1,908 @@
+{
+  "_source": "powerbi-report-author catalog describe",
+  "visuals": {
+    "accessibleTable": {
+      "roles": {
+        "Rows": "Grouping",
+        "Columns": "Grouping",
+        "Values": "Measure"
+      },
+      "required": [],
+      "optional": [
+        "Rows",
+        "Columns",
+        "Values"
+      ],
+      "max_per_role": {}
+    },
+    "actionButton": {
+      "roles": {},
+      "required": [],
+      "optional": [],
+      "max_per_role": {}
+    },
+    "advancedSlicerVisual": {
+      "roles": {
+        "Values": "Grouping",
+        "Label": "Measure",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Values"
+      ],
+      "optional": [
+        "Label",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Values": 1
+      }
+    },
+    "aiNarratives": {
+      "roles": {},
+      "required": [],
+      "optional": [],
+      "max_per_role": {}
+    },
+    "animatedNumber": {
+      "roles": {},
+      "required": [],
+      "optional": [],
+      "max_per_role": {}
+    },
+    "areaChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Y2": "Measure",
+        "Rows": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Series",
+        "Y2",
+        "Rows",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1
+      }
+    },
+    "azureMap": {
+      "roles": {
+        "Category": "Grouping",
+        "Y": "GroupingOrMeasure",
+        "X": "GroupingOrMeasure",
+        "Series": "Grouping",
+        "Size": "Measure",
+        "Tooltips": "Measure",
+        "PathID": "Grouping",
+        "PointOrder": "Grouping"
+      },
+      "required": [
+        "Category"
+      ],
+      "optional": [
+        "Y",
+        "X",
+        "Series",
+        "Size",
+        "Tooltips",
+        "PathID",
+        "PointOrder"
+      ],
+      "max_per_role": {
+        "Y": 1,
+        "X": 1,
+        "Series": 1,
+        "Size": 1,
+        "PathID": 1,
+        "PointOrder": 1
+      }
+    },
+    "barChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Rows": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Series",
+        "Rows",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1
+      }
+    },
+    "basicShape": {
+      "roles": {},
+      "required": [],
+      "optional": [],
+      "max_per_role": {}
+    },
+    "bookmarkNavigator": {
+      "roles": {},
+      "required": [],
+      "optional": [],
+      "max_per_role": {}
+    },
+    "card": {
+      "roles": {
+        "Values": "Measure"
+      },
+      "required": [
+        "Values"
+      ],
+      "optional": [],
+      "max_per_role": {
+        "Values": 1
+      }
+    },
+    "cardVisual": {
+      "roles": {
+        "Data": "Measure",
+        "Rows": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Data"
+      ],
+      "optional": [
+        "Rows",
+        "Tooltips"
+      ],
+      "max_per_role": {}
+    },
+    "clusteredBarChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Rows": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Series",
+        "Rows",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1
+      }
+    },
+    "clusteredColumnChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Rows": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Series",
+        "Rows",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1
+      }
+    },
+    "columnChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Rows": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Series",
+        "Rows",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1
+      }
+    },
+    "dataQueryVisual": {
+      "roles": {
+        "Values": "GroupingOrMeasure"
+      },
+      "required": [],
+      "optional": [
+        "Values"
+      ],
+      "max_per_role": {}
+    },
+    "decompositionTreeVisual": {
+      "roles": {
+        "Analyze": "Measure",
+        "ExplainBy": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Analyze"
+      ],
+      "optional": [
+        "ExplainBy",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Analyze": 1
+      }
+    },
+    "donutChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Series",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Category": 1,
+        "Series": 1
+      }
+    },
+    "filledMap": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "X": "Measure",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category"
+      ],
+      "optional": [
+        "Series",
+        "Y",
+        "X",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1,
+        "Y": 1,
+        "X": 1
+      }
+    },
+    "filterSlicer": {
+      "roles": {
+        "Values": "Grouping"
+      },
+      "required": [
+        "Values"
+      ],
+      "optional": [],
+      "max_per_role": {
+        "Values": 1
+      }
+    },
+    "funnel": {
+      "roles": {
+        "Category": "Grouping",
+        "Y": "Measure",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Category": 1
+      }
+    },
+    "gauge": {
+      "roles": {
+        "Y": "Measure",
+        "MinValue": "Measure",
+        "MaxValue": "Measure",
+        "TargetValue": "Measure",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Y"
+      ],
+      "optional": [
+        "MinValue",
+        "MaxValue",
+        "TargetValue",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Y": 1,
+        "MinValue": 1,
+        "MaxValue": 1,
+        "TargetValue": 1
+      }
+    },
+    "heatMap": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "GroupingOrMeasure",
+        "X": "GroupingOrMeasure",
+        "Size": "Measure",
+        "Tooltips": "Measure"
+      },
+      "required": [],
+      "optional": [
+        "Category",
+        "Series",
+        "Y",
+        "X",
+        "Size",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1,
+        "Y": 1,
+        "X": 1,
+        "Size": 1
+      }
+    },
+    "hundredPercentStackedAreaChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Rows": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Series",
+        "Rows",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1
+      }
+    },
+    "hundredPercentStackedBarChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Rows": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Series",
+        "Rows",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1
+      }
+    },
+    "hundredPercentStackedColumnChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Rows": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Series",
+        "Rows",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1
+      }
+    },
+    "image": {
+      "roles": {},
+      "required": [],
+      "optional": [],
+      "max_per_role": {}
+    },
+    "keyDriversVisual": {
+      "roles": {
+        "Target": "GroupingOrMeasure",
+        "ExplainBy": "GroupingOrMeasure",
+        "Details": "Grouping"
+      },
+      "required": [],
+      "optional": [
+        "Target",
+        "ExplainBy",
+        "Details"
+      ],
+      "max_per_role": {
+        "Target": 1
+      }
+    },
+    "kpi": {
+      "roles": {
+        "Indicator": "Measure",
+        "TrendLine": "Grouping",
+        "Goal": "Measure"
+      },
+      "required": [
+        "Indicator"
+      ],
+      "optional": [
+        "TrendLine",
+        "Goal"
+      ],
+      "max_per_role": {
+        "Indicator": 1,
+        "TrendLine": 1,
+        "Goal": 2
+      }
+    },
+    "lineChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Y2": "Measure",
+        "Rows": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Series",
+        "Y2",
+        "Rows",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1
+      }
+    },
+    "lineClusteredColumnComboChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Y2": "Measure",
+        "Rows": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category"
+      ],
+      "optional": [
+        "Series",
+        "Y",
+        "Y2",
+        "Rows",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1
+      }
+    },
+    "lineStackedColumnComboChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Y2": "Measure",
+        "Rows": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category"
+      ],
+      "optional": [
+        "Series",
+        "Y",
+        "Y2",
+        "Rows",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1
+      }
+    },
+    "listSlicer": {
+      "roles": {
+        "Values": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Values"
+      ],
+      "optional": [
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Values": 1
+      }
+    },
+    "map": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "GroupingOrMeasure",
+        "X": "GroupingOrMeasure",
+        "Size": "Measure",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category"
+      ],
+      "optional": [
+        "Series",
+        "Y",
+        "X",
+        "Size",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1,
+        "Y": 1,
+        "X": 1,
+        "Size": 1
+      }
+    },
+    "matrix": {
+      "roles": {
+        "Rows": "Grouping",
+        "Columns": "Grouping",
+        "Values": "Measure"
+      },
+      "required": [
+        "Values"
+      ],
+      "optional": [
+        "Rows",
+        "Columns"
+      ],
+      "max_per_role": {}
+    },
+    "multiRowCard": {
+      "roles": {
+        "Values": "GroupingOrMeasure"
+      },
+      "required": [
+        "Values"
+      ],
+      "optional": [],
+      "max_per_role": {}
+    },
+    "pageNavigator": {
+      "roles": {},
+      "required": [],
+      "optional": [],
+      "max_per_role": {}
+    },
+    "pieChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Series",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Category": 1,
+        "Series": 1
+      }
+    },
+    "pivotTable": {
+      "roles": {
+        "Rows": "Grouping",
+        "Columns": "Grouping",
+        "Values": "Measure"
+      },
+      "required": [
+        "Values"
+      ],
+      "optional": [
+        "Rows",
+        "Columns"
+      ],
+      "max_per_role": {}
+    },
+    "pythonVisual": {
+      "roles": {
+        "Values": "GroupingOrMeasure"
+      },
+      "required": [],
+      "optional": [
+        "Values"
+      ],
+      "max_per_role": {}
+    },
+    "qnaVisual": {
+      "roles": {},
+      "required": [],
+      "optional": [],
+      "max_per_role": {}
+    },
+    "rdlVisual": {
+      "roles": {
+        "parameterValues": "GroupingOrMeasure"
+      },
+      "required": [],
+      "optional": [
+        "parameterValues"
+      ],
+      "max_per_role": {}
+    },
+    "realTimeLineChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure"
+      },
+      "required": [],
+      "optional": [
+        "Category",
+        "Series",
+        "Y"
+      ],
+      "max_per_role": {
+        "Category": 1,
+        "Series": 1
+      }
+    },
+    "ribbonChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Rows": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Series",
+        "Rows",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1
+      }
+    },
+    "scatterChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "X": "GroupingOrMeasure",
+        "Y": "GroupingOrMeasure",
+        "Size": "Measure",
+        "Play": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "X",
+        "Y"
+      ],
+      "optional": [
+        "Category",
+        "Series",
+        "Size",
+        "Play",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Category": 1,
+        "Series": 1,
+        "Y": 1,
+        "Size": 1,
+        "Play": 1
+      }
+    },
+    "scorecard": {
+      "roles": {},
+      "required": [],
+      "optional": [],
+      "max_per_role": {}
+    },
+    "scriptVisual": {
+      "roles": {
+        "Values": "GroupingOrMeasure"
+      },
+      "required": [],
+      "optional": [
+        "Values"
+      ],
+      "max_per_role": {}
+    },
+    "shape": {
+      "roles": {},
+      "required": [],
+      "optional": [],
+      "max_per_role": {}
+    },
+    "shapeMap": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Value": "Measure",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category"
+      ],
+      "optional": [
+        "Series",
+        "Value",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Category": 1,
+        "Series": 1,
+        "Value": 1
+      }
+    },
+    "slicer": {
+      "roles": {
+        "Values": "Grouping"
+      },
+      "required": [
+        "Values"
+      ],
+      "optional": [],
+      "max_per_role": {
+        "Values": 1
+      }
+    },
+    "stackedAreaChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Series": "Grouping",
+        "Y": "Measure",
+        "Rows": "Grouping",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Series",
+        "Rows",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Series": 1
+      }
+    },
+    "table": {
+      "roles": {
+        "Values": "GroupingOrMeasure"
+      },
+      "required": [
+        "Values"
+      ],
+      "optional": [],
+      "max_per_role": {}
+    },
+    "tableEx": {
+      "roles": {
+        "Values": "GroupingOrMeasure"
+      },
+      "required": [
+        "Values"
+      ],
+      "optional": [],
+      "max_per_role": {}
+    },
+    "textSlicer": {
+      "roles": {
+        "Values": "Grouping"
+      },
+      "required": [
+        "Values"
+      ],
+      "optional": [],
+      "max_per_role": {
+        "Values": 1
+      }
+    },
+    "textbox": {
+      "roles": {},
+      "required": [],
+      "optional": [],
+      "max_per_role": {}
+    },
+    "treemap": {
+      "roles": {
+        "Group": "Grouping",
+        "Details": "Grouping",
+        "Values": "Measure",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Values"
+      ],
+      "optional": [
+        "Group",
+        "Details",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Group": 1,
+        "Details": 1
+      }
+    },
+    "waterfallChart": {
+      "roles": {
+        "Category": "Grouping",
+        "Breakdown": "Grouping",
+        "Y": "Measure",
+        "Tooltips": "Measure"
+      },
+      "required": [
+        "Category",
+        "Y"
+      ],
+      "optional": [
+        "Breakdown",
+        "Tooltips"
+      ],
+      "max_per_role": {
+        "Category": 1,
+        "Breakdown": 1,
+        "Y": 1
+      }
+    }
+  }
+}

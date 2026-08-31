@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from t2pbi.ir.powerbi_ir import FieldKind, PBIFieldRef
-from t2pbi.mapping.visual_catalog import enforce_wells
+from t2pbi.mapping.visual_catalog import VISUAL_CATALOG, enforce_wells
 from t2pbi.mapping.visual_decision import Ambiguity, DecisionSource, DefaultRouter, MappingDecision
 
 
@@ -13,6 +13,14 @@ def _col(name: str) -> PBIFieldRef:
 
 def _agg(name: str) -> PBIFieldRef:
     return PBIFieldRef(entity="Orders", property=name, kind=FieldKind.AGGREGATION, function=0)
+
+
+def test_visual_catalog_loads_from_generated_json():
+    # Guards against a missing/corrupt data/visual_catalog.json snapshot.
+    assert len(VISUAL_CATALOG) > 20
+    for vt in ("areaChart", "clusteredColumnChart", "lineChart", "pivotTable", "tableEx"):
+        assert vt in VISUAL_CATALOG
+    assert VISUAL_CATALOG["clusteredColumnChart"].roles["Rows"] == "Grouping"
 
 
 def test_enforce_wells_drops_unknown_role():

@@ -1,16 +1,22 @@
 """Frozen snapshot of Power BI visual role capabilities.
 
-Captured from ``powerbi-report-author catalog describe <type>`` (Microsoft's authoritative
-capability metadata). Regenerate when targeting a newer PBIR/Desktop version. Used as a guardrail:
+The data in ``data/visual_catalog.json`` is generated from ``powerbi-report-author catalog
+describe`` (Microsoft's authoritative capability metadata) by ``scripts/refresh_visual_catalog.py``.
+Regenerate it with that script when targeting a newer PBIR/Desktop version. Used as a guardrail:
 before a visual is emitted, its role assignment is checked against the roles the visual actually
 supports, so an unknown or over-filled role is caught here rather than producing a blank visual.
 """
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from pydantic import BaseModel, Field
 
 from t2pbi.ir.powerbi_ir import PBIFieldRef
+
+_CATALOG_PATH = Path(__file__).parent / "data" / "visual_catalog.json"
 
 
 class VisualSpec(BaseModel):
@@ -22,58 +28,13 @@ class VisualSpec(BaseModel):
     max_per_role: dict[str, int] = Field(default_factory=dict)
 
 
-# Only the visual types the mapper currently emits. Extend by running the CLI for more types.
-VISUAL_CATALOG: dict[str, VisualSpec] = {
-    "areaChart": VisualSpec(
-        roles={"Category": "Grouping", "Series": "Grouping", "Y": "Measure",
-               "Y2": "Measure", "Rows": "Grouping", "Tooltips": "Measure"},
-        required=["Category", "Y"], optional=["Series", "Y2", "Rows", "Tooltips"],
-        max_per_role={"Series": 1},
-    ),
-    "barChart": VisualSpec(
-        roles={"Category": "Grouping", "Series": "Grouping", "Y": "Measure",
-               "Rows": "Grouping", "Tooltips": "Measure"},
-        required=["Category", "Y"], optional=["Series", "Rows", "Tooltips"],
-        max_per_role={"Series": 1},
-    ),
-    "clusteredBarChart": VisualSpec(
-        roles={"Category": "Grouping", "Series": "Grouping", "Y": "Measure",
-               "Rows": "Grouping", "Tooltips": "Measure"},
-        required=["Category", "Y"], optional=["Series", "Rows", "Tooltips"],
-        max_per_role={"Series": 1},
-    ),
-    "columnChart": VisualSpec(
-        roles={"Category": "Grouping", "Series": "Grouping", "Y": "Measure",
-               "Rows": "Grouping", "Tooltips": "Measure"},
-        required=["Category", "Y"], optional=["Series", "Rows", "Tooltips"],
-        max_per_role={"Series": 1},
-    ),
-    "clusteredColumnChart": VisualSpec(
-        roles={"Category": "Grouping", "Series": "Grouping", "Y": "Measure",
-               "Rows": "Grouping", "Tooltips": "Measure"},
-        required=["Category", "Y"], optional=["Series", "Rows", "Tooltips"],
-        max_per_role={"Series": 1},
-    ),
-    "lineChart": VisualSpec(
-        roles={"Category": "Grouping", "Series": "Grouping", "Y": "Measure",
-               "Y2": "Measure", "Rows": "Grouping", "Tooltips": "Measure"},
-        required=["Category", "Y"], optional=["Series", "Y2", "Rows", "Tooltips"],
-        max_per_role={"Series": 1},
-    ),
-    "pivotTable": VisualSpec(
-        roles={"Rows": "Grouping", "Columns": "Grouping", "Values": "Measure"},
-        required=["Values"], optional=["Rows", "Columns"],
-    ),
-    "scatterChart": VisualSpec(
-        roles={"Category": "Grouping", "Series": "Grouping", "X": "GroupingOrMeasure",
-               "Y": "GroupingOrMeasure", "Size": "Measure", "Play": "Grouping", "Tooltips": "Measure"},
-        required=["X", "Y"], optional=["Category", "Series", "Size", "Play", "Tooltips"],
-        max_per_role={"Category": 1, "Series": 1, "Y": 1, "Size": 1, "Play": 1},
-    ),
-    "tableEx": VisualSpec(
-        roles={"Values": "GroupingOrMeasure"}, required=["Values"],
-    ),
-}
+def _load_catalog() -> dict[str, VisualSpec]:
+    data = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
+    return {name: VisualSpec(**spec) for name, spec in data["visuals"].items()}
+
+
+# Frozen at import from the generated snapshot; refresh via scripts/refresh_visual_catalog.py.
+VISUAL_CATALOG: dict[str, VisualSpec] = _load_catalog()
 
 
 def enforce_wells(
