@@ -270,26 +270,14 @@ def _map_worksheet(
     if not wells:
         return None
 
-    # A dimension sharing the measure's shelf could be small multiples (Rows) or a legend (Series).
-    ambiguity = None
-    if trellis:
-        names = ", ".join(f.property for f in trellis)
-        reason = (
-            f"dimension(s) [{names}] share the measure's shelf: "
-            "small multiples (Rows) vs legend (Series)"
-        )
-        ambiguity = Ambiguity(
-            reasons=[reason],
-            candidates=[visual_type],
-            features=_worksheet_features(ws, row_dims, col_dims, row_measures, col_measures, color_dims),
-        )
-
+    # Tableau's shelf structure disambiguates this: a dimension on the measure's row shelf is a
+    # small-multiples trellis (-> Rows); a colour-encoding dimension is a legend (-> Series). Both
+    # are read deterministically, so this is a confident decision (not routed to the LLM).
     return MappingDecision(
         visual_type=visual_type,
         wells=wells,
         sort_field=values[0] if values else None,
-        rationale="cols=X (Category), rows=Y; trellis->Rows, colour->Series.",
-        ambiguity=ambiguity,
+        rationale="cols=X (Category), rows=Y; trellis dim -> Rows (small multiples), colour -> Series.",
     )
 
 
