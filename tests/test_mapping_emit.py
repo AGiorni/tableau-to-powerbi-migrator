@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from t2pbi.emit.tmdl_writer import render_semantic_model
-from t2pbi.ingest import load_workbook
-from t2pbi.ir.powerbi_ir import PBIDataType, SummarizeBy
-from t2pbi.mapping.model_mapper import UNTRANSLATED_DAX, map_model
-from t2pbi.parse import parse_workbook
+from x2pbi.emit.tmdl_writer import render_semantic_model
+from x2pbi.ir.powerbi_ir import PBIDataType, SummarizeBy
+from x2pbi.mapping.model_mapper import UNTRANSLATED_DAX, map_model
+from x2pbi.sources.tableau import load_workbook, parse_workbook
 
 
 def _model(path):

@@ -5,7 +5,7 @@ targeted Power BI / PBIR version changes:
 
     python scripts/refresh_visual_catalog.py
 
-It rewrites ``src/t2pbi/mapping/data/visual_catalog.json``, which ``visual_catalog.py`` loads at
+It rewrites ``src/x2pbi/mapping/data/visual_catalog.json``, which ``visual_catalog.py`` loads at
 import. This is a build-time developer tool; it is never invoked during a migration.
 """
 
@@ -20,7 +20,7 @@ from pathlib import Path
 _CLI = "powerbi-report-author"
 _OUT = (
     Path(__file__).resolve().parents[1]
-    / "src" / "t2pbi" / "mapping" / "data" / "visual_catalog.json"
+    / "src" / "x2pbi" / "mapping" / "data" / "visual_catalog.json"
 )
 
 

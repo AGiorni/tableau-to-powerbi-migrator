@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from t2pbi.ir.powerbi_ir import FieldKind, PBIFieldRef
-from t2pbi.mapping.visual_catalog import VISUAL_CATALOG, enforce_wells
-from t2pbi.mapping.visual_decision import Ambiguity, DecisionSource, DefaultRouter, MappingDecision
+from x2pbi.ir.powerbi_ir import FieldKind, PBIFieldRef
+from x2pbi.mapping.visual_catalog import VISUAL_CATALOG, enforce_wells
+from x2pbi.mapping.visual_decision import Ambiguity, DecisionSource, DefaultRouter, MappingDecision
 
 
 def _col(name: str) -> PBIFieldRef:

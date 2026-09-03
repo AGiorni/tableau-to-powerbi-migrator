@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 
-from t2pbi.graph import run_migration
+from x2pbi.graph import run_migration
 
 # Power BI Desktop enforces this exact pattern on the .pbip $schema.
 _PBIP_SCHEMA_RE = re.compile(

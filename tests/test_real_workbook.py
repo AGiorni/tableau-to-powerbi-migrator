@@ -9,10 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from t2pbi.ingest import load_workbook
-from t2pbi.mapping.model_mapper import map_model
-from t2pbi.parse import parse_workbook
-from t2pbi.validate import validate_model
+from x2pbi.mapping.model_mapper import map_model
+from x2pbi.sources.tableau import load_workbook, parse_workbook
+from x2pbi.validate import validate_model
 
 _BOOK1 = Path(__file__).resolve().parents[1] / "samples" / "input" / "Book1.twb"
 

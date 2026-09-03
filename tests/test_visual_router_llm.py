@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from t2pbi.ir.powerbi_ir import FieldKind, PBIFieldRef
-from t2pbi.mapping.visual_decision import Ambiguity, DecisionSource, MappingDecision
-from t2pbi.mapping.visual_router_llm import LLMVisualRouter
+from x2pbi.ir.powerbi_ir import FieldKind, PBIFieldRef
+from x2pbi.mapping.visual_decision import Ambiguity, DecisionSource, MappingDecision
+from x2pbi.mapping.visual_router_llm import LLMVisualRouter
 
 
 class _Resp:

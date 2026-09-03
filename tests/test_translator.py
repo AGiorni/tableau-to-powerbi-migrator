@@ -1,4 +1,4 @@
-"""Tests for the Tableau calc → DAX expression translator.
+"""Tests for the source calc → DAX expression translator.
 
 The deterministic tests use a fake chat model so they run with no network or credentials. The
 live test is skipped unless Azure OpenAI is configured via environment variables.
@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import pytest
 
-from t2pbi.config import load_azure_openai_config
-from t2pbi.ingest import load_workbook
-from t2pbi.llm import build_chat_model
-from t2pbi.mapping.expression_translator import _clean_dax, translate_expressions
-from t2pbi.mapping.model_mapper import UNTRANSLATED_DAX, map_model
-from t2pbi.mapping.report import IssueSeverity, MigrationReport
-from t2pbi.parse import parse_workbook
+from x2pbi.config import load_azure_openai_config
+from x2pbi.llm import build_chat_model
+from x2pbi.mapping.expression_translator import _clean_dax, translate_expressions
+from x2pbi.mapping.model_mapper import UNTRANSLATED_DAX, map_model
+from x2pbi.mapping.report import IssueSeverity, MigrationReport
+from x2pbi.sources.tableau import load_workbook, parse_workbook
 
 
 class _FakeResponse:
@@ -23,7 +22,7 @@ class _FakeResponse:
 
 
 class _FakeChat:
-    """Returns canned DAX based on a substring of the incoming Tableau formula."""
+    """Returns canned DAX based on a substring of the incoming source formula."""
 
     def __init__(self, by_formula: dict[str, str]) -> None:
         self.by_formula = by_formula
@@ -111,7 +110,7 @@ def test_clean_dax(raw, expected):
 
 @pytest.mark.skipif(
     not load_azure_openai_config().is_configured,
-    reason="Azure OpenAI not configured (set T2PBI_AZURE_OPENAI_ENDPOINT/DEPLOYMENT).",
+    reason="Azure OpenAI not configured (set X2PBI_AZURE_OPENAI_ENDPOINT/DEPLOYMENT).",
 )
 def test_live_translation_smoke(superstore_twb):
     """Hits the real Azure OpenAI deployment when configured."""

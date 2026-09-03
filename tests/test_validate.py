@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from t2pbi.ingest import load_workbook
-from t2pbi.ir.powerbi_ir import (
+from x2pbi.ir.powerbi_ir import (
     Cardinality,
     PBIColumn,
     PBIDataType,
@@ -12,11 +11,11 @@ from t2pbi.ir.powerbi_ir import (
     PBIRelationship,
     PBITable,
 )
-from t2pbi.mapping.expression_translator import translate_expressions
-from t2pbi.mapping.model_mapper import UNTRANSLATED_DAX, map_model
-from t2pbi.mapping.report import IssueSeverity, MigrationReport
-from t2pbi.parse import parse_workbook
-from t2pbi.validate import validate_dax, validate_model
+from x2pbi.mapping.expression_translator import translate_expressions
+from x2pbi.mapping.model_mapper import UNTRANSLATED_DAX, map_model
+from x2pbi.mapping.report import IssueSeverity, MigrationReport
+from x2pbi.sources.tableau import load_workbook, parse_workbook
+from x2pbi.validate import validate_dax, validate_model
 
 
 def _model_with(*, columns, measures=(), relationships=()):

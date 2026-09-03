@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from t2pbi.validate.pbir_cli import iter_findings
+from x2pbi.validate.pbir_cli import iter_findings
 
 
 def test_iter_findings_maps_and_downgrades_env_codes():

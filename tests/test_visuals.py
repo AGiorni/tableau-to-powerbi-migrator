@@ -1,16 +1,15 @@
-"""Tests for visual mapping (worksheet -> page/visual) and PBIR visual JSON emission."""
+"""Tests for visual mapping (view -> page/visual) and PBIR visual JSON emission."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from t2pbi.emit.pbir_writer import build_visual_json
-from t2pbi.ingest import load_workbook
-from t2pbi.ir.powerbi_ir import FieldKind, PBIFieldRef, PBIVisual
-from t2pbi.mapping.model_mapper import map_model
-from t2pbi.mapping.report import MigrationReport
-from t2pbi.mapping.visual_mapper import map_visuals
-from t2pbi.parse import parse_workbook
+from x2pbi.emit.pbir_writer import build_visual_json
+from x2pbi.ir.powerbi_ir import FieldKind, PBIFieldRef, PBIVisual
+from x2pbi.mapping.model_mapper import map_model
+from x2pbi.mapping.report import MigrationReport
+from x2pbi.mapping.visual_mapper import map_visuals
+from x2pbi.sources.tableau import load_workbook, parse_workbook
 
 _BOOK1 = Path(__file__).resolve().parents[1] / "samples" / "input" / "Book1.twb"
 
@@ -93,10 +92,10 @@ def test_dashboard_page_with_slicers_book1_if_present():
         return
 
     workbook = parse_workbook(load_workbook(_BOOK1))
-    # Dashboard zones are parsed: worksheets + filter cards.
+    # Dashboard zones are parsed: views + filter cards.
     dash = workbook.dashboards[0]
     assert dash.name == "Executive Overview"
-    assert any(z.kind == "worksheet" for z in dash.zones)
+    assert any(z.kind == "view" for z in dash.zones)
     assert any(z.kind == "filter" for z in dash.zones)
 
     model = map_model(workbook).model
@@ -121,8 +120,8 @@ def test_kpi_measure_values_table_book1_if_present():
         return
 
     workbook = parse_workbook(load_workbook(_BOOK1))
-    kpi_ws = next(w for w in workbook.worksheets if w.name == "Key Performance Indicators")
-    assert kpi_ws.measure_names  # measures captured from the Measure Names filter
+    kpi_view = next(v for v in workbook.views if v.name == "Key Performance Indicators")
+    assert kpi_view.measure_names  # measures captured from the Measure Names filter
 
     model = map_model(workbook).model
     pages = map_visuals(workbook, model, MigrationReport())
@@ -140,7 +139,7 @@ def test_map_worksheet_book1_if_present():
         return
 
     workbook = parse_workbook(load_workbook(_BOOK1))
-    geo = next(w for w in workbook.worksheets if w.name == "profit ratio by geography")
+    geo = next(v for v in workbook.views if v.name == "profit ratio by geography")
     assert geo.is_map
 
     model = map_model(workbook).model

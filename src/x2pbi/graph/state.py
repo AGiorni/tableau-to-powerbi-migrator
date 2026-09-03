@@ -1,0 +1,154 @@
+"""Shared pipeline state and the individual stage node functions.
+
+Each node takes the mutable :class:`PipelineState` and returns it, so the same functions power
+both the LangGraph graph and the plain-Python fallback orchestrator.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+from x2pbi.ir.powerbi_ir import PBIModel, PBIReportPage
+from x2pbi.ir.source_ir import SourceCalculatedField, SourceWorkbook
+from x2pbi.mapping.expression_translator import translate_expressions
+from x2pbi.mapping.model_mapper import map_model
+from x2pbi.mapping.report import MigrationReport
+from x2pbi.mapping.visual_mapper import map_visuals
+from x2pbi.sources import SourceAdapter, adapter_for_path, get_adapter
+
+
+@dataclass
+class PipelineState:
+    """Everything that flows through the migration pipeline."""
+
+    input_path: str
+    out_dir: str
+    chat_model: Any | None = None
+    preflight: bool = False  # run the powerbi-report-author validate gate after assembly
+    source: str | None = None  # adapter name; inferred from the file extension when omitted
+
+    adapter: SourceAdapter | None = None
+    workbook: SourceWorkbook | None = None
+    model: PBIModel | None = None
+    pending_expressions: dict[str, SourceCalculatedField] = field(default_factory=dict)
+    pages: list[PBIReportPage] = field(default_factory=list)
+    report: MigrationReport = field(default_factory=MigrationReport)
+    pbip_path: str | None = None
+
+
+def ingest_node(state: PipelineState) -> PipelineState:
+    """Pick the source adapter and parse the input into the neutral source IR.
+
+    This is the only stage that knows which BI tool the input came from.
+    """
+
+    adapter = get_adapter(state.source) if state.source else adapter_for_path(state.input_path)
+    state.adapter = adapter
+    state.workbook = adapter.parse(state.input_path)
+    return state
+
+
+def map_model_node(state: PipelineState) -> PipelineState:
+    assert state.workbook is not None, "ingest must run before mapping"
+    result = map_model(state.workbook, state.report)
+    state.model = result.model
+    state.pending_expressions = result.pending_expressions
+    state.report = result.report
+    return state
+
+
+def translate_expressions_node(state: PipelineState) -> PipelineState:
+    assert state.model is not None, "mapping must run before translation"
+    state.model = translate_expressions(
+        state.model,
+        state.pending_expressions,
+        state.chat_model,
+        state.report,
+        dialect=state.adapter.dialect if state.adapter is not None else None,
+    )
+    return state
+
+
+def map_visuals_node(state: PipelineState) -> PipelineState:
+    assert state.workbook is not None and state.model is not None
+    from x2pbi.mapping.visual_router_llm import LLMVisualRouter
+
+    router = LLMVisualRouter(state.chat_model) if state.chat_model is not None else None
+    state.pages = map_visuals(state.workbook, state.model, state.report, router=router)
+    return state
+
+
+def validate_node(state: PipelineState) -> PipelineState:
+    assert state.model is not None, "mapping must run before validation"
+    from x2pbi.mapping.report import IssueSeverity
+    from x2pbi.validate import validate_dax, validate_model
+
+    for finding in validate_model(state.model):
+        severity = IssueSeverity.ERROR if finding.severity == "error" else IssueSeverity.WARNING
+        state.report.add(severity, "validate", finding.object_name, finding.message)
+
+    # Safety net for the emitted DAX: only syntax breakage is fatal here (reference issues are
+    # handled during translation, where they are legitimately just warnings).
+    for table in state.model.tables:
+        for measure in table.measures:
+            for issue in validate_dax(measure.expression, state.model):
+                if issue.kind == "delimiter":
+                    state.report.add(IssueSeverity.ERROR, "validate", measure.name, issue.message)
+    return state
+
+
+def assemble_node(state: PipelineState) -> PipelineState:
+    assert state.model is not None, "mapping must run before assembly"
+    from x2pbi.emit import assemble_pbip
+
+    path = assemble_pbip(state.model, state.out_dir, state.pages)
+    state.pbip_path = str(path)
+    return state
+
+
+def preflight_validate_node(state: PipelineState) -> PipelineState:
+    """Validate the emitted PBIP with powerbi-report-author and fold diagnostics into the report."""
+
+    if not state.preflight or state.pbip_path is None:
+        return state
+    from x2pbi.mapping.report import IssueSeverity
+    from x2pbi.validate.pbir_cli import iter_findings, run_pbir_validation
+
+    result = run_pbir_validation(state.pbip_path)
+    if result is None:
+        state.report.add(
+            IssueSeverity.INFO,
+            "preflight",
+            "validator",
+            "powerbi-report-author not available; skipped PBIR validation gate.",
+        )
+        return state
+
+    severities = {
+        "error": IssueSeverity.ERROR,
+        "warning": IssueSeverity.WARNING,
+        "info": IssueSeverity.INFO,
+    }
+    for severity, code, message in iter_findings(result):
+        state.report.add(severities.get(severity, IssueSeverity.WARNING), "preflight", code, message)
+
+    state.report.add(
+        IssueSeverity.INFO,
+        "preflight",
+        "validator",
+        f"PBIR validation: {result.get('result', 'unknown')} "
+        f"({result.get('errorCount', 0)} error(s), {result.get('warningCount', 0)} warning(s)).",
+    )
+    return state
+
+
+STAGES = (
+    ingest_node,
+    map_model_node,
+    translate_expressions_node,
+    map_visuals_node,
+    validate_node,
+    assemble_node,
+    preflight_validate_node,
+)
