@@ -4,6 +4,8 @@
 
 ## Read these first
 
+- **[docs/architecture.html](docs/architecture.html)** — open in a browser: pipeline stages, the
+  worksheet → visual decision order, Tableau → Power BI mapping rules, LLM touchpoints, gotchas.
 - **[docs/DEVLOG.md](docs/DEVLOG.md)** — why the code is shaped the way it is, and a reference
   table of format constraints Power BI Desktop enforces. Check it before changing anything in
   `emit/`; several of those constraints look arbitrary and are not.
@@ -16,6 +18,9 @@
   Record the reasoning and how it was verified, not just the outcome.
 - Update **BACKLOG** in the same commit as the work that opens or closes an item. Mark an item
   **(verified)** with the date when it has been confirmed against the code.
+- Update **docs/architecture.html** when a change moves what it shows: a stage added or
+  reordered, a visual-mapping rule, an LLM touchpoint, a gotcha fixed. Bump the commit and date in
+  its footer.
 - Propose these updates as part of the change; don't wait to be asked.
 
 ## Architecture in one line

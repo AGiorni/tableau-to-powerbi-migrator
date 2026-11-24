@@ -36,7 +36,8 @@ Working end to end on the sample workbooks:
   the migration report.
 
 Open work is in [BACKLOG.md](BACKLOG.md); the reasoning behind past decisions is in
-[docs/DEVLOG.md](docs/DEVLOG.md).
+[docs/DEVLOG.md](docs/DEVLOG.md). For a visual map of the pipeline, open
+[docs/architecture.html](docs/architecture.html) in a browser.
 
 ## Quick start
 
