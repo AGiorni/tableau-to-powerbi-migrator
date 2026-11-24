@@ -1,0 +1,253 @@
+"""Graph nodes and routers.
+
+Nodes are thin: each reads the state, delegates the real work to the ingest / parse / mapping /
+validate / emit layers, and returns a partial state update. Issues a node finds are returned in
+``issues`` (appended by the state's reducer), never written anywhere else.
+
+Routers decide which edge to follow. They read the state and the run context and return a route
+label; the labels are mapped to nodes in :mod:`t2pbi.graph.pipeline`.
+"""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from langgraph.runtime import Runtime
+
+from t2pbi.emit import assemble_pbip
+from t2pbi.graph.state import MigrationContext, MigrationState
+from t2pbi.ingest import load_workbook
+from t2pbi.mapping import expression_translator, model_mapper, visual_mapper
+from t2pbi.mapping.report import IssueSeverity, MigrationReport
+from t2pbi.mapping.visual_router_llm import LLMVisualRouter
+from t2pbi.parse import parse_workbook
+from t2pbi.validate import model_validate, validate_dax
+from t2pbi.validate.pbir_cli import iter_findings, run_pbir_validation
+
+# --------------------------------------------------------------------------------------------
+# Nodes
+# --------------------------------------------------------------------------------------------
+
+
+def ingest(state: MigrationState) -> dict:
+    """Read the .twb/.twbx and parse it into the Tableau IR."""
+
+    return {"workbook": parse_workbook(load_workbook(state.input_path))}
+
+
+def map_model(state: MigrationState) -> dict:
+    """Tableau IR -> Power BI semantic model; calculated fields become pending measures."""
+
+    assert state.workbook is not None
+    report = MigrationReport()
+    result = model_mapper.map_model(state.workbook, report)
+    return {
+        "model": result.model,
+        "pending_expressions": result.pending_expressions,
+        "issues": report.issues,
+    }
+
+
+def translate_expressions(state: MigrationState, runtime: Runtime[MigrationContext]) -> dict:
+    """Ask the LLM for DAX for every pending calculated field.
+
+    On a repair pass, each field's previous rejection reasons are sent along as feedback.
+    """
+
+    assert state.model is not None
+    chat = runtime.context.chat_model
+    schema = expression_translator.schema_context(state.model)
+    candidates = {
+        key: expression_translator.translate_calc(
+            calc,
+            owning_table=key.split("::", 1)[0],
+            schema_context=schema,
+            chat_model=chat,
+            feedback=state.dax_feedback.get(key),
+        )
+        for key, calc in state.pending_expressions.items()
+    }
+    return {"dax_candidates": candidates, "translation_attempts": state.translation_attempts + 1}
+
+
+def validate_expressions(state: MigrationState, runtime: Runtime[MigrationContext]) -> dict:
+    """Accept valid candidates into the model; keep rejected ones pending with feedback.
+
+    When the attempt budget is spent, whatever is still pending is reported as an error and
+    stays ``BLANK()``.
+    """
+
+    assert state.model is not None
+    model = state.model.model_copy(deep=True)
+    measures = {
+        f"{table.name}::{measure.name}": measure
+        for table in model.tables
+        for measure in table.measures
+    }
+    report = MigrationReport()
+    pending, feedback = {}, {}
+
+    for key, calc in state.pending_expressions.items():
+        measure = measures.get(key)
+        if measure is None:
+            continue
+        dax = state.dax_candidates.get(key)
+        check = expression_translator.check_dax(dax, model)
+        if not check.accepted:
+            pending[key], feedback[key] = calc, check.rejections
+            continue
+
+        measure.expression = dax or ""
+        measure.description = None
+        report.add(
+            IssueSeverity.INFO,
+            "expression",
+            calc.display_name,
+            "Translated Tableau calc to DAX.",
+            detail=f"{calc.formula}  =>  {measure.expression}",
+        )
+        for warning in check.reference_warnings:
+            report.add(
+                IssueSeverity.WARNING,
+                "expression",
+                calc.display_name,
+                f"Translated DAX references something not in the model: {warning}",
+            )
+
+    if pending and state.translation_attempts >= runtime.context.max_translation_attempts:
+        for key, calc in pending.items():
+            report.add(
+                IssueSeverity.ERROR,
+                "expression",
+                calc.display_name,
+                "Could not produce valid DAX after retries; left as BLANK().",
+                detail=f"{calc.formula} | last errors: {'; '.join(feedback[key])}",
+            )
+        pending, feedback = {}, {}
+
+    return {
+        "model": model,
+        "pending_expressions": pending,
+        "dax_feedback": feedback,
+        "dax_candidates": {},
+        "issues": report.issues,
+    }
+
+
+def flag_untranslated(state: MigrationState) -> dict:
+    """No LLM configured: leave every calculated field as BLANK() and say so in the report."""
+
+    report = MigrationReport()
+    for calc in state.pending_expressions.values():
+        report.add(
+            IssueSeverity.WARNING,
+            "expression",
+            calc.display_name,
+            "Calculated field awaiting DAX translation (no LLM configured); left as BLANK()."
+            + (" Contains an LOD expression." if calc.is_lod else ""),
+            detail=calc.formula,
+        )
+    return {"pending_expressions": {}, "issues": report.issues}
+
+
+def map_visuals(state: MigrationState, runtime: Runtime[MigrationContext]) -> dict:
+    """Worksheets and dashboards -> report pages. Unmatched worksheets go to the LLM router."""
+
+    assert state.workbook is not None and state.model is not None
+    chat = runtime.context.chat_model
+    router = LLMVisualRouter(chat) if chat is not None else None
+    report = MigrationReport()
+    pages = visual_mapper.map_visuals(state.workbook, state.model, report, router=router)
+    return {"pages": pages, "issues": report.issues}
+
+
+def validate_model(state: MigrationState) -> dict:
+    """Structural model checks plus a DAX syntax safety net. Findings are reported, not fatal."""
+
+    assert state.model is not None
+    report = MigrationReport()
+    for finding in model_validate.validate_model(state.model):
+        severity = IssueSeverity.ERROR if finding.severity == "error" else IssueSeverity.WARNING
+        report.add(severity, "validate", finding.object_name, finding.message)
+
+    # Only syntax breakage is an error here; reference issues were handled during translation,
+    # where they are legitimately just warnings.
+    for table in state.model.tables:
+        for measure in table.measures:
+            for issue in validate_dax(measure.expression, state.model):
+                if issue.kind == "delimiter":
+                    report.add(IssueSeverity.ERROR, "validate", measure.name, issue.message)
+    return {"issues": report.issues}
+
+
+def assemble(state: MigrationState) -> dict:
+    """Write the .pbip project (TMDL semantic model + PBIR report) to disk."""
+
+    assert state.model is not None
+    path = assemble_pbip(state.model, state.out_dir, state.pages)
+    return {"pbip_path": str(path)}
+
+
+def validate_pbir(state: MigrationState) -> dict:
+    """Run the external powerbi-report-author validator and fold its diagnostics into issues."""
+
+    assert state.pbip_path is not None
+    report = MigrationReport()
+    result = run_pbir_validation(state.pbip_path)
+    if result is None:
+        report.add(
+            IssueSeverity.INFO,
+            "preflight",
+            "validator",
+            "powerbi-report-author not available; skipped PBIR validation gate.",
+        )
+        return {"issues": report.issues}
+
+    severities = {
+        "error": IssueSeverity.ERROR,
+        "warning": IssueSeverity.WARNING,
+        "info": IssueSeverity.INFO,
+    }
+    for severity, code, message in iter_findings(result):
+        report.add(severities.get(severity, IssueSeverity.WARNING), "preflight", code, message)
+
+    report.add(
+        IssueSeverity.INFO,
+        "preflight",
+        "validator",
+        f"PBIR validation: {result.get('result', 'unknown')} "
+        f"({result.get('errorCount', 0)} error(s), {result.get('warningCount', 0)} warning(s)).",
+    )
+    return {"issues": report.issues}
+
+
+# --------------------------------------------------------------------------------------------
+# Routers
+# --------------------------------------------------------------------------------------------
+
+ExpressionRoute = Literal["translate", "no_llm", "nothing_to_translate"]
+RepairRoute = Literal["repair", "done"]
+PbirRoute = Literal["validate", "skip"]
+
+
+def route_expressions(
+    state: MigrationState, runtime: Runtime[MigrationContext]
+) -> ExpressionRoute:
+    """After model mapping: translate with the LLM, flag for manual work, or move on."""
+
+    if not state.pending_expressions:
+        return "nothing_to_translate"
+    return "translate" if runtime.context.chat_model is not None else "no_llm"
+
+
+def route_after_expression_validation(state: MigrationState) -> RepairRoute:
+    """Loop back for a repair pass while any field is still pending (validation clears the
+    pending set once the attempt budget is spent, so this always terminates)."""
+
+    return "repair" if state.pending_expressions else "done"
+
+
+def route_pbir_validation(state: MigrationState, runtime: Runtime[MigrationContext]) -> PbirRoute:
+    """After assembly: run the external PBIR validator unless the run disabled it."""
+
+    return "validate" if runtime.context.run_pbir_validation else "skip"

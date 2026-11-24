@@ -1,7 +1,8 @@
-"""Tests for the Tableau calc → DAX expression translator.
+"""Tests for Tableau calc → DAX translation.
 
-The deterministic tests use a fake chat model so they run with no network or credentials. The
-live test is skipped unless Azure OpenAI is configured via environment variables.
+The helpers are tested directly; translation end to end runs through the migration graph. The
+deterministic tests use a fake chat model so they run with no network or credentials. The live
+test is skipped unless Azure OpenAI is configured via environment variables.
 """
 
 from __future__ import annotations
@@ -9,11 +10,17 @@ from __future__ import annotations
 import pytest
 
 from t2pbi.config import load_azure_openai_config
+from t2pbi.graph import MigrationContext, migrate
 from t2pbi.ingest import load_workbook
 from t2pbi.llm import build_chat_model
-from t2pbi.mapping.expression_translator import _clean_dax, translate_expressions
+from t2pbi.mapping.expression_translator import (
+    EMPTY_RESPONSE_FEEDBACK,
+    check_dax,
+    clean_dax,
+    translate_calc,
+)
 from t2pbi.mapping.model_mapper import UNTRANSLATED_DAX, map_model
-from t2pbi.mapping.report import IssueSeverity, MigrationReport
+from t2pbi.mapping.report import IssueSeverity
 from t2pbi.parse import parse_workbook
 
 
@@ -38,14 +45,19 @@ class _FakeChat:
         return _FakeResponse("BLANK()")
 
 
-def _mapped(superstore_twb):
-    result = map_model(parse_workbook(load_workbook(superstore_twb)))
-    return result.model, result.pending_expressions
+def _migrate(twb, out_dir, chat):
+    return migrate(twb, out_dir, MigrationContext(chat_model=chat, run_pbir_validation=False))
 
 
-def test_translate_updates_measures(superstore_twb):
-    model, pending = _mapped(superstore_twb)
-    report = MigrationReport()
+def _expression_issues(result):
+    return [i for i in result.report.issues if i.stage == "expression"]
+
+
+def _pending_count(twb) -> int:
+    return len(map_model(parse_workbook(load_workbook(twb))).pending_expressions)
+
+
+def test_translate_updates_measures(superstore_twb, tmp_path):
     fake = _FakeChat(
         {
             "SUM([Profit]) / SUM([Sales])": "DIVIDE(SUM('Superstore'[Profit]), SUM('Superstore'[Sales]))",
@@ -53,41 +65,38 @@ def test_translate_updates_measures(superstore_twb):
         }
     )
 
-    translate_expressions(model, pending, fake, report)
+    result = _migrate(superstore_twb, tmp_path, fake)
 
-    profit_ratio = next(m for m in model.tables[0].measures if m.name == "Profit Ratio")
+    profit_ratio = next(m for m in result.model.tables[0].measures if m.name == "Profit Ratio")
     assert profit_ratio.expression == "DIVIDE(SUM('Superstore'[Profit]), SUM('Superstore'[Sales]))"
     # Successful translation clears the TODO description.
     assert profit_ratio.description is None
-    # Both calls were made.
+    # One call per field: both were accepted on the first pass.
     assert len(fake.prompts) == 2
-    assert any(i.severity is IssueSeverity.INFO for i in report.issues)
+    assert any(i.severity is IssueSeverity.INFO for i in _expression_issues(result))
 
 
-def test_no_model_leaves_placeholders_and_warns(superstore_twb):
-    model, pending = _mapped(superstore_twb)
-    report = MigrationReport()
+def test_no_model_leaves_placeholders_and_warns(superstore_twb, tmp_path):
+    result = _migrate(superstore_twb, tmp_path, None)
 
-    translate_expressions(model, pending, None, report)
-
-    for measure in model.tables[0].measures:
+    for measure in result.model.tables[0].measures:
         assert measure.expression == UNTRANSLATED_DAX
     # Without an LLM, every pending field is a warning (awaiting translation), not an error.
-    assert len(report.issues) == len(pending)
-    assert all(i.severity is IssueSeverity.WARNING for i in report.issues)
+    issues = _expression_issues(result)
+    assert len(issues) == _pending_count(superstore_twb)
+    assert all(i.severity is IssueSeverity.WARNING for i in issues)
 
 
-def test_blank_response_flags_error(superstore_twb):
-    model, pending = _mapped(superstore_twb)
-    report = MigrationReport()
+def test_blank_response_flags_error(superstore_twb, tmp_path):
     fake = _FakeChat({})  # everything falls through to BLANK()
 
-    translate_expressions(model, pending, fake, report)
+    result = _migrate(superstore_twb, tmp_path, fake)
 
-    for measure in model.tables[0].measures:
+    for measure in result.model.tables[0].measures:
         assert measure.expression == UNTRANSLATED_DAX
-    assert all(i.severity is IssueSeverity.ERROR for i in report.issues)
-    assert len(report.issues) == len(pending)
+    issues = _expression_issues(result)
+    assert all(i.severity is IssueSeverity.ERROR for i in issues)
+    assert len(issues) == _pending_count(superstore_twb)
 
 
 @pytest.mark.parametrize(
@@ -106,24 +115,47 @@ def test_blank_response_flags_error(superstore_twb):
     ],
 )
 def test_clean_dax(raw, expected):
-    assert _clean_dax(raw) == expected
+    assert clean_dax(raw) == expected
+
+
+def test_check_dax(superstore_twb):
+    model = map_model(parse_workbook(load_workbook(superstore_twb))).model
+
+    assert check_dax(None, model).rejections == [EMPTY_RESPONSE_FEEDBACK]
+    assert check_dax(UNTRANSLATED_DAX, model).rejections == [EMPTY_RESPONSE_FEEDBACK]
+    assert not check_dax("SUM('Superstore'[Sales]", model).accepted
+
+    ok = check_dax("SUM('Superstore'[Sales])", model)
+    assert ok.accepted and not ok.reference_warnings
+
+    # Unknown references are a warning, never a rejection.
+    unknown = check_dax("SUM('Superstore'[Profit])", model)
+    assert unknown.accepted and unknown.reference_warnings
+
+
+def test_translate_calc_degrades_on_provider_error(superstore_twb):
+    class _Failing:
+        def invoke(self, _messages):
+            raise RuntimeError("provider down")
+
+    result = map_model(parse_workbook(load_workbook(superstore_twb)))
+    calc = next(iter(result.pending_expressions.values()))
+    assert translate_calc(calc, "Superstore", "", _Failing()) is None
 
 
 @pytest.mark.skipif(
     not load_azure_openai_config().is_configured,
     reason="Azure OpenAI not configured (set T2PBI_AZURE_OPENAI_ENDPOINT/DEPLOYMENT).",
 )
-def test_live_translation_smoke(superstore_twb):
+def test_live_translation_smoke(superstore_twb, tmp_path):
     """Hits the real Azure OpenAI deployment when configured."""
 
     chat = build_chat_model()
     assert chat is not None
 
-    model, pending = _mapped(superstore_twb)
-    report = MigrationReport()
-    translate_expressions(model, pending, chat, report)
+    result = _migrate(superstore_twb, tmp_path, chat)
 
-    ratio = next(m for m in model.tables[0].measures if m.name == "Profit Ratio")
+    ratio = next(m for m in result.model.tables[0].measures if m.name == "Profit Ratio")
     # A plausible ratio translation should reference Sales and not be the placeholder.
     assert ratio.expression != UNTRANSLATED_DAX
     assert "Sales" in ratio.expression

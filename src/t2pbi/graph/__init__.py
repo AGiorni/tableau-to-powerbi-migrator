@@ -1,5 +1,6 @@
-"""Graph layer: pipeline state, stage nodes, and orchestration."""
+"""Graph layer: the LangGraph migration graph, its state, and its run context."""
 
-from t2pbi.graph.pipeline import MigrationResult, build_graph, run_migration
+from t2pbi.graph.pipeline import MigrationResult, build_graph, migrate
+from t2pbi.graph.state import MigrationContext, MigrationState
 
-__all__ = ["MigrationResult", "build_graph", "run_migration"]
+__all__ = ["MigrationContext", "MigrationResult", "MigrationState", "build_graph", "migrate"]

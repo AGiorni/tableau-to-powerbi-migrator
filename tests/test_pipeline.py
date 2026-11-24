@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 
-from t2pbi.graph import run_migration
+from t2pbi.graph import MigrationContext, migrate
 
 # Power BI Desktop enforces this exact pattern on the .pbip $schema.
 _PBIP_SCHEMA_RE = re.compile(
@@ -13,8 +13,8 @@ _PBIP_SCHEMA_RE = re.compile(
 )
 
 
-def test_run_migration_writes_pbip(superstore_twb, tmp_path):
-    result = run_migration(str(superstore_twb), str(tmp_path), chat_model=None)
+def test_migrate_writes_pbip(superstore_twb, tmp_path):
+    result = migrate(superstore_twb, tmp_path, MigrationContext(run_pbir_validation=False))
 
     pbip = tmp_path / "superstore.pbip"
     assert pbip.exists()
@@ -57,7 +57,7 @@ def test_run_migration_writes_pbip(superstore_twb, tmp_path):
 
 
 def test_report_flags_untranslated(superstore_twb, tmp_path):
-    result = run_migration(str(superstore_twb), str(tmp_path), chat_model=None)
+    result = migrate(superstore_twb, tmp_path, MigrationContext(run_pbir_validation=False))
 
     # Without an LLM, both calculated fields remain untranslated; the LOD one is an error.
     messages = [i.message for i in result.report.issues if i.stage == "expression"]

@@ -9,6 +9,43 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-24 — The LangGraph graph is the only runner
+
+**Context.** LangGraph was chosen at the start because this is an agentic accelerator:
+validation stages, repair loops, LLM calls for the hard cases, and later human review. In
+practice the CLI ran a plain `for stage in STAGES` loop; `build_graph()` wired the same stages
+into a straight-line graph that nothing called or tested. The things LangGraph exists for had
+been built *inside* nodes instead: the DAX retry loop lived in `_translate_and_repair`, the
+"is there an LLM?" and "run the validator?" decisions were `if`s at the top of node functions.
+
+**Decision.** One compiled `StateGraph` runs every migration (`graph/pipeline.py`), and the
+hidden control flow became graph structure:
+
+- *LLM or not* → router after `map_model`: `translate` / `no_llm` / `nothing_to_translate`.
+- *DAX repair* → `translate_expressions` ⇄ `validate_expressions` loop on the `repair` route.
+  Translation and checking are now pure helpers in `mapping/expression_translator.py`; the loop,
+  the feedback and the attempt budget (`max_translation_attempts`) belong to the graph.
+- *External PBIR validation* → router after `assemble`: `validate` / `skip`.
+
+**State vs context.** `MigrationState` (Pydantic) holds data only; nodes return partial updates
+and never mutate it. Issues use an append reducer (`Annotated[list, operator.add]`). The chat
+model and run settings live in `MigrationContext`, injected via `runtime.context`, so the state
+stays serializable. That is the precondition for checkpointing and human-in-the-loop interrupts,
+neither of which is wired yet.
+
+**Verified behaviour-preserving.** Before the change, every sample was migrated twice (no LLM,
+and a fake LLM that answers each formula with unbalanced DAX first, forcing the repair path) and
+every emitted file and report issue was snapshotted, with random ids masked and issues compared
+as a sorted multiset. After the change the snapshot was identical on all six runs. One trap in
+building that harness: Python's `hash()` of a string is randomized per process, so the fake LLM's
+answers differed between two baseline runs until it used `zlib.crc32`.
+
+**Not done here, deliberately.** Whether `validate_model` errors should block `assemble` (today
+they are reported only, and the CLI exits 0) is a behaviour change, not a refactor; it is now a
+one-edge change when decided.
+
+---
+
 ## 2026-09-01 — Trellis vs legend is deterministic, so don't ask the LLM
 
 The LLM router was being handed a choice it had no business making: whether a dimension becomes

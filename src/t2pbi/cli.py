@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from t2pbi.graph import run_migration
+from t2pbi.graph import MigrationContext, migrate
 from t2pbi.llm import build_chat_model
 
 
@@ -42,10 +42,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_migrate(args: argparse.Namespace) -> int:
-    chat_model = None if args.no_llm else build_chat_model()
-    result = run_migration(
-        args.input, args.out, chat_model=chat_model, preflight=not args.no_validate
+    context = MigrationContext(
+        chat_model=None if args.no_llm else build_chat_model(),
+        run_pbir_validation=not args.no_validate,
     )
+    result = migrate(args.input, args.out, context)
 
     print(f"Wrote project: {result.pbip_path}")
     errors = [i for i in result.report.issues if i.severity.value == "error"]

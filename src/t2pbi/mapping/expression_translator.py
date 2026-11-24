@@ -1,20 +1,20 @@
-"""Translate Tableau calculated-field formulas into DAX.
+"""Translate Tableau calculated-field formulas into DAX, and judge the result.
 
-When an Azure OpenAI model is available, each pending calculated field is translated with a
-constrained prompt and the resulting DAX is written back onto the corresponding measure. When no
-model is configured, measures keep their ``BLANK()`` placeholder and remain flagged in the
-report, so the pipeline still produces an openable model.
+These are the building blocks of the expression loop in the migration graph
+(``translate_expressions`` -> ``validate_expressions`` -> repair). They hold no loop or retry
+logic of their own: the graph decides when to translate, when to retry with feedback, and when to
+give up.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
-from t2pbi.ir.powerbi_ir import PBIMeasure, PBIModel, PBITable
+from t2pbi.ir.powerbi_ir import PBIModel
 from t2pbi.ir.tableau_ir import TableauCalculatedField
 from t2pbi.mapping.model_mapper import UNTRANSLATED_DAX
-from t2pbi.mapping.report import IssueSeverity, MigrationReport
 from t2pbi.validate import validate_dax
 
 _FENCE_RE = re.compile(r"^```[a-zA-Z]*\n?|\n?```$")
@@ -22,8 +22,7 @@ _FENCE_RE = re.compile(r"^```[a-zA-Z]*\n?|\n?```$")
 # bracketed/quoted-value starts so it never eats a real DAX expression like "[a] = [b]".
 _LEADING_ASSIGN_RE = re.compile(r"^\s*'?[A-Za-z_][A-Za-z0-9_ ]*'?\s*=\s*")
 
-# Total translation attempts per field (1 initial + repairs) when DAX fails syntax validation.
-_MAX_ATTEMPTS = 2
+EMPTY_RESPONSE_FEEDBACK = "The previous response was empty; return a valid DAX expression."
 
 _SYSTEM_PROMPT = (
     "You are an expert in both Tableau calculation language and Power BI DAX. "
@@ -42,114 +41,38 @@ _SYSTEM_PROMPT = (
 )
 
 
-def translate_expressions(
-    model: PBIModel,
-    pending: dict[str, TableauCalculatedField],
-    chat_model: Any | None,
-    report: MigrationReport,
-) -> PBIModel:
-    """Fill in DAX for pending measures. Mutates and returns ``model``."""
+@dataclass(frozen=True)
+class DaxCheck:
+    """Verdict on one candidate DAX expression.
 
-    if not pending:
-        return model
+    ``rejections`` make the candidate unusable and are fed back to the LLM on repair (empty
+    answer, unbalanced delimiters). ``reference_warnings`` are kept as report warnings only:
+    Tableau formulas often reference source columns that never appear as workbook fields.
+    """
 
-    tables_by_name = {table.name: table for table in model.tables}
-    measures_by_key = {
-        f"{table.name}::{measure.name}": measure
-        for table in model.tables
-        for measure in table.measures
-    }
+    rejections: list[str] = field(default_factory=list)
+    reference_warnings: list[str] = field(default_factory=list)
 
-    if chat_model is None:
-        for key, calc in pending.items():
-            report.add(
-                IssueSeverity.WARNING,
-                "expression",
-                calc.display_name,
-                "Calculated field awaiting DAX translation (no LLM configured); left as BLANK()."
-                + (" Contains an LOD expression." if calc.is_lod else ""),
-                detail=calc.formula,
-            )
-        return model
-
-    schema_context = _schema_context(model)
-
-    for key, calc in pending.items():
-        measure = measures_by_key.get(key)
-        if measure is None:
-            continue
-        table_name = key.split("::", 1)[0]
-        owning_table = tables_by_name.get(table_name)
-        _translate_and_repair(calc, measure, owning_table, schema_context, model, chat_model, report)
-
-    return model
+    @property
+    def accepted(self) -> bool:
+        return not self.rejections
 
 
-def _translate_and_repair(
+def translate_calc(
     calc: TableauCalculatedField,
-    measure: PBIMeasure,
-    owning_table: PBITable | None,
-    schema_context: str,
-    model: PBIModel,
-    chat_model: Any,
-    report: MigrationReport,
-) -> None:
-    """Translate one calc, retrying with validator feedback when the DAX is syntactically broken."""
-
-    feedback: list[str] = []
-    for _ in range(_MAX_ATTEMPTS):
-        dax = _clean_dax(_translate_one(calc, owning_table, schema_context, chat_model, feedback))
-        if not dax or dax == UNTRANSLATED_DAX:
-            feedback = ["The previous response was empty; return a valid DAX expression."]
-            continue
-
-        issues = validate_dax(dax, model)
-        syntax_errors = [i.message for i in issues if i.kind == "delimiter"]
-        if syntax_errors:
-            feedback = syntax_errors
-            continue
-
-        measure.expression = dax
-        measure.description = None
-        report.add(
-            IssueSeverity.INFO,
-            "expression",
-            calc.display_name,
-            "Translated Tableau calc to DAX.",
-            detail=f"{calc.formula}  =>  {measure.expression}",
-        )
-        for ref in (i.message for i in issues if i.kind == "reference"):
-            report.add(
-                IssueSeverity.WARNING,
-                "expression",
-                calc.display_name,
-                f"Translated DAX references something not in the model: {ref}",
-            )
-        return
-
-    report.add(
-        IssueSeverity.ERROR,
-        "expression",
-        calc.display_name,
-        "Could not produce valid DAX after retries; left as BLANK().",
-        detail=f"{calc.formula} | last errors: {'; '.join(feedback)}",
-    )
-
-
-def _translate_one(
-    calc: TableauCalculatedField,
-    owning_table: PBITable | None,
+    owning_table: str | None,
     schema_context: str,
     chat_model: Any,
     feedback: list[str] | None = None,
 ) -> str | None:
+    """Ask the chat model for one DAX expression. Returns cleaned DAX, or None on any failure."""
+
     from langchain_core.messages import HumanMessage, SystemMessage
 
-    owning = owning_table.name if owning_table is not None else "(unknown)"
     user = (
         f"Model schema (tables and their columns):\n{schema_context}\n\n"
         f"Field name: {calc.display_name}\n"
-        f"This field belongs to table: {owning}\n"
+        f"This field belongs to table: {owning_table or '(unknown)'}\n"
         f"Result data type: {calc.datatype.value}\n"
         f"Is LOD: {calc.is_lod}\n"
         f"Tableau formula:\n{calc.formula}"
@@ -163,10 +86,22 @@ def _translate_one(
     except Exception:  # noqa: BLE001 - degrade gracefully on any provider error
         return None
     content = getattr(response, "content", None)
-    return content if isinstance(content, str) else None
+    return clean_dax(content if isinstance(content, str) else None)
 
 
-def _schema_context(model: PBIModel) -> str:
+def check_dax(dax: str | None, model: PBIModel) -> DaxCheck:
+    """Judge a candidate: reject empty/placeholder or syntactically broken DAX."""
+
+    if not dax or dax == UNTRANSLATED_DAX:
+        return DaxCheck(rejections=[EMPTY_RESPONSE_FEEDBACK])
+    issues = validate_dax(dax, model)
+    return DaxCheck(
+        rejections=[i.message for i in issues if i.kind == "delimiter"],
+        reference_warnings=[i.message for i in issues if i.kind == "reference"],
+    )
+
+
+def schema_context(model: PBIModel) -> str:
     """Render a compact 'Table: [col1], [col2] ...' listing for prompt grounding."""
 
     lines: list[str] = []
@@ -176,7 +111,7 @@ def _schema_context(model: PBIModel) -> str:
     return "\n".join(lines)
 
 
-def _clean_dax(raw: str | None) -> str | None:
+def clean_dax(raw: str | None) -> str | None:
     """Normalize raw model output into a bare DAX expression.
 
     Removes Markdown code fences and an accidental measure-name assignment prefix that models

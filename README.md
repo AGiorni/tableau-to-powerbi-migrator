@@ -5,22 +5,35 @@ produces a Power BI Project (`.pbip`) folder ready to open in Power BI Desktop.
 
 ## Architecture
 
-A **staged pipeline** (LangGraph) built around a central **Intermediate Representation (IR)**:
+A **LangGraph state graph** built around two **Intermediate Representations (IRs)**: the workbook
+is parsed into a Tableau IR, mapped to a Power BI IR, and only then written out as TMDL + PBIR.
+The graph is the only way a migration runs, from the CLI and from tests alike.
 
-```
-.twb/.twbx  ──► ingest ──► parse ──► Tableau IR
-                                        │
-                                        ▼
-                              model / expression / visual / layout mapping
-                                        │
-                                        ▼
-                                   Power BI IR ──► emit (TMDL + PBIR) ──► .pbip
-                                        ▲                                    │
-                                        └────────── validate & repair ◄──────┘
+```mermaid
+graph TD
+    START([start]) --> ingest
+    ingest --> map_model
+    map_model -.->|translate| translate_expressions
+    map_model -.->|no_llm| flag_untranslated
+    map_model -.->|nothing_to_translate| map_visuals
+    translate_expressions --> validate_expressions
+    validate_expressions -.->|repair| translate_expressions
+    validate_expressions -.->|done| map_visuals
+    flag_untranslated --> map_visuals
+    map_visuals --> validate_model
+    validate_model --> assemble
+    assemble -.->|validate| validate_pbir
+    assemble -.->|skip| END([end])
+    validate_pbir --> END
 ```
 
-Deterministic code does parsing and generation. LLMs (Azure OpenAI) are used surgically for
-the hard reasoning: Tableau calc/LOD → DAX/M translation, visual/layout mapping, and repair.
+Dotted edges are decisions made by a router at run time. Regenerate the exact diagram from the
+code with `python -c "from t2pbi.graph import build_graph; print(build_graph().get_graph().draw_mermaid())"`.
+
+Deterministic code does parsing and generation. LLMs (Azure OpenAI) are used only where the
+workbook is genuinely ambiguous: calculated field → DAX translation (with a validate-and-repair
+loop) and visual mapping for worksheets no rule matches. With no LLM configured, the graph
+takes the deterministic route and still produces an openable project.
 
 ## Status
 
@@ -48,8 +61,8 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Run a migration (deterministic path):
+Run a migration (deterministic path, no LLM calls):
 
 ```powershell
-t2pbi migrate .\samples\input\example.twb --out .\out
+t2pbi migrate .\samples\input\Book1.twb --out .\out --no-llm --report .\out\report.json
 ```

@@ -27,13 +27,35 @@
 
 `.twb`/`.twbx` → ingest → parse → **Tableau IR** ([ir/tableau_ir.py](src/t2pbi/ir/tableau_ir.py))
 → mapping → **Power BI IR** ([ir/powerbi_ir.py](src/t2pbi/ir/powerbi_ir.py)) → emit (TMDL + PBIR)
-→ validate. Orchestrated as a LangGraph pipeline in [graph/](src/t2pbi/graph/).
+→ validate. Orchestrated by one LangGraph `StateGraph` in
+[graph/pipeline.py](src/t2pbi/graph/pipeline.py); its topology is drawn in that file's docstring.
+
+## The graph is the only runner
+
+This is an agentic accelerator: validation, repair and LLM steps belong in the graph, where they
+are visible, testable and checkpointable. There is exactly one way to run a migration —
+`build_graph()` / `migrate()` — used by the CLI and the tests alike. Do not add a second
+orchestration path.
+
+- **New stage → new node** in [graph/nodes.py](src/t2pbi/graph/nodes.py). Nodes stay thin: they
+  delegate to `ingest/`, `parse/`, `mapping/`, `validate/`, `emit/` and return a partial state
+  update. They never mutate the state they were given (copy first, as `validate_expressions` does).
+- **New decision, loop or gate → conditional edge** with a named route, not an `if` or retry
+  loop inside a node. The DAX repair loop (`validate_expressions` → `repair` →
+  `translate_expressions`) is the model to follow.
+- **State vs context.** `MigrationState` ([graph/state.py](src/t2pbi/graph/state.py)) holds data
+  only, so it stays serializable. Clients, flags and budgets go in `MigrationContext` and are
+  read through `runtime.context`.
+- **Issues** are returned as `{"issues": [...]}`; the reducer appends them. Mapping functions
+  still take a `MigrationReport`; a node creates a fresh one and returns its `issues`.
+- `tests/test_graph.py` pins the topology and routing — update it with any graph change.
 
 ## Conventions
 
 - Deterministic code parses and generates; LLMs are used **only** where the workbook is genuinely
   ambiguous. If the input already answers the question, read the input. Every LLM path must fall
-  back safely to the deterministic result.
+  back safely to the deterministic result, and the graph must still complete with
+  `MigrationContext(chat_model=None)`.
 - Unmappable input degrades with a report warning; it does not raise. A partial migration that
   opens beats a clean failure.
 - The visual catalog JSON is generated, not hand-edited — refresh it with

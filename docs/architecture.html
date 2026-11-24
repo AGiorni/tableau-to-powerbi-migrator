@@ -81,6 +81,7 @@ figcaption { font-size: 14px; color: var(--muted); max-width: 75ch; }
 .sw { display: inline-block; width: 26px; height: 0; border-top: 2px solid var(--fg); }
 .sw.dash { border-top-style: dashed; border-color: var(--muted); }
 .sw.llm { border-top: 2px dashed var(--llm); }
+.sw.route { border-top: 2px dashed var(--accent); }
 .chip { display: inline-block; width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid; }
 .chip.llm { background: var(--llm-soft); border-color: var(--llm); }
 .chip.out { background: var(--accent-soft); border-color: var(--accent); }
@@ -113,6 +114,9 @@ figcaption { font-size: 14px; color: var(--muted); max-width: 75ch; }
 .d .f-fg { fill: var(--fg); }
 .d .f-muted { fill: var(--muted); }
 .d .f-llm { fill: var(--llm); }
+.d .f-acc { fill: var(--accent); }
+.d .ln-route { stroke: var(--accent); stroke-width: 1.4; stroke-dasharray: 6 4; fill: none; }
+.d .t-route { font: 600 11px var(--mono); fill: var(--accent); }
 
 /* Tables */
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
@@ -151,10 +155,10 @@ html { scroll-behavior: smooth; }
 <header>
   <div class="eyebrow">Tableau → Power BI · developer map</div>
   <h1>t2pbi Pipeline Map</h1>
-  <p class="lede">How a <code>.twb</code> becomes a <code>.pbip</code>: the stages in order, what each hands to the next, where the LLM is called, and the traps to remember before changing anything.</p>
+  <p class="lede">How a <code>.twb</code> becomes a <code>.pbip</code>: the LangGraph nodes and routes, what each node hands to the next, where the LLM is called, and the traps to remember before changing anything.</p>
   <nav aria-label="Sections">
     <ol>
-      <li><a href="#pipeline">Pipeline</a></li>
+      <li><a href="#pipeline">Graph</a></li>
       <li><a href="#visuals">Worksheet → visual</a></li>
       <li><a href="#mapping">What becomes what</a></li>
       <li><a href="#llm">LLM calls</a></li>
@@ -167,133 +171,151 @@ html { scroll-behavior: smooth; }
 <!-- 1. PIPELINE -->
 <section id="pipeline">
   <div class="section-head">
-    <h2>The pipeline</h2>
-    <p>Seven stage functions share one mutable <code>PipelineState</code>. Each reads what earlier stages wrote, adds its own field, and appends problems to a shared report.</p>
+    <h2>The graph</h2>
+    <p>One LangGraph <code>StateGraph</code> runs every migration, from the CLI and from tests alike. Nodes read <code>MigrationState</code> and return partial updates; routers pick the next node by name. The chat model and run flags travel separately in <code>MigrationContext</code>.</p>
   </div>
   <figure>
     <div class="frame">
-      <svg class="d" viewBox="0 0 800 860" role="img" aria-label="The CLI runs seven stages in order: ingest, map model, translate expressions, map visuals, validate, assemble, preflight validate. Each passes the pipeline state to the next. Translate expressions and map visuals may call Azure OpenAI; map visuals checks roles against the visual catalog; preflight calls the external powerbi-report-author CLI. Five stages append issues to a MigrationReport that ends up in the console output.">
+      <svg class="d" viewBox="0 0 880 1000" role="img" aria-label="The CLI builds a MigrationContext and invokes the graph. ingest, then map_model. A router after map_model picks translate, no_llm or nothing_to_translate. translate_expressions calls Azure OpenAI, then validate_expressions either loops back on the repair route or continues on done to map_visuals. flag_untranslated and the nothing_to_translate route also lead to map_visuals, which may call the LLM for unmatched sheets and checks roles against the visual catalog. Then validate_model, assemble, and a router that either runs validate_pbir via the external CLI or skips to the end.">
         <defs>
           <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-fg"/></marker>
           <marker id="ahm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-muted"/></marker>
           <marker id="ahl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-llm"/></marker>
+          <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-acc"/></marker>
         </defs>
 
-        <!-- CLI -->
-        <rect class="box" x="232" y="16" width="288" height="56" rx="6"/>
-        <text class="t-name" x="248" y="38">t2pbi migrate &lt;file&gt;</text>
-        <text class="t-desc" x="248" y="58">cli.py · plain for-loop over STAGES</text>
-        <line class="ln" x1="376" y1="72" x2="376" y2="110" marker-end="url(#ah)"/>
-        <text class="t-lab" x="386" y="95">PipelineState</text>
+        <!-- CLI + context -->
+        <rect class="box" x="236" y="16" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="38">t2pbi migrate &lt;file&gt;</text>
+        <text class="t-desc" x="252" y="58">cli.py → migrate() → graph.invoke()</text>
+        <rect class="box-ext" x="620" y="16" width="244" height="64" rx="6"/>
+        <text class="t-title" x="634" y="38">MigrationContext</text>
+        <text class="t-desc" x="634" y="56">chat_model · run_pbir_validation</text>
+        <text class="t-desc" x="634" y="72">max_translation_attempts</text>
+        <line class="ln" x1="524" y1="44" x2="618" y2="44" marker-end="url(#ah)"/>
+        <text class="t-lab" x="571" y="38" text-anchor="middle">builds</text>
+        <line class="ln" x1="380" y1="72" x2="380" y2="110" marker-end="url(#ah)"/>
+        <text class="t-lab" x="390" y="95">MigrationState(input_path, out_dir)</text>
 
-        <!-- 1 ingest -->
-        <rect class="box" x="232" y="112" width="288" height="56" rx="6"/>
-        <text class="t-name" x="248" y="134">ingest_node</text>
-        <text class="t-desc" x="248" y="154">unzip .twbx → lxml → parse_workbook()</text>
-        <line class="ln" x1="376" y1="168" x2="376" y2="206" marker-end="url(#ah)"/>
-        <text class="t-lab" x="386" y="191">workbook: TableauWorkbook</text>
+        <!-- ingest -->
+        <rect class="box" x="236" y="112" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="134">ingest</text>
+        <text class="t-desc" x="252" y="154">unzip .twbx → lxml → parse_workbook()</text>
+        <line class="ln" x1="380" y1="168" x2="380" y2="206" marker-end="url(#ah)"/>
+        <text class="t-lab" x="390" y="191">workbook</text>
 
-        <!-- 2 map model -->
-        <rect class="box" x="232" y="208" width="288" height="56" rx="6"/>
-        <text class="t-name" x="248" y="230">map_model_node</text>
-        <text class="t-desc" x="248" y="250">tables, M queries, joins, BLANK() measures</text>
-        <line class="ln" x1="376" y1="264" x2="376" y2="302" marker-end="url(#ah)"/>
-        <text class="t-lab" x="386" y="287">model + pending_expressions</text>
+        <!-- map_model -->
+        <rect class="box" x="236" y="208" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="230">map_model</text>
+        <text class="t-desc" x="252" y="250">tables, M, joins, BLANK() measures</text>
 
-        <!-- 3 translate -->
-        <rect class="box-llm" x="232" y="304" width="288" height="56" rx="6"/>
-        <text class="t-name" x="248" y="326">translate_expressions_node</text>
-        <text class="t-desc" x="248" y="346">calc → DAX, one retry on bad syntax</text>
-        <rect class="pill" x="474" y="314" width="34" height="16" rx="8"/>
-        <text class="t-pill" x="491" y="326" text-anchor="middle">LLM</text>
-        <line class="ln" x1="376" y1="360" x2="376" y2="398" marker-end="url(#ah)"/>
-        <text class="t-lab" x="386" y="383">model, DAX filled in</text>
+        <!-- router after map_model -->
+        <line class="ln-route" x1="380" y1="264" x2="380" y2="318" marker-end="url(#aha)"/>
+        <text class="t-route" x="390" y="296">translate</text>
+        <path class="ln-route" d="M236 252 H126 V318" marker-end="url(#aha)"/>
+        <text class="t-route" x="181" y="268" text-anchor="middle">no_llm</text>
+        <path class="ln-route" d="M236 228 H30 V570 H234" marker-end="url(#aha)"/>
+        <text class="t-route" x="133" y="222" text-anchor="middle">nothing_to_translate</text>
 
-        <!-- 4 map visuals -->
-        <rect class="box-llm" x="232" y="400" width="288" height="56" rx="6"/>
-        <text class="t-name" x="248" y="422">map_visuals_node</text>
-        <text class="t-desc" x="248" y="442">worksheets &amp; dashboards → pages</text>
-        <rect class="pill" x="474" y="410" width="34" height="16" rx="8"/>
-        <text class="t-pill" x="491" y="422" text-anchor="middle">LLM</text>
-        <line class="ln" x1="376" y1="456" x2="376" y2="494" marker-end="url(#ah)"/>
-        <text class="t-lab" x="386" y="479">pages: list[PBIReportPage]</text>
+        <!-- flag_untranslated -->
+        <rect class="box" x="56" y="320" width="140" height="56" rx="6"/>
+        <text class="t-name-s" x="66" y="342">flag_untranslated</text>
+        <text class="t-desc" x="66" y="362">BLANK() + warning</text>
+        <path class="ln" d="M126 376 V542 H234" marker-end="url(#ah)"/>
 
-        <!-- 5 validate -->
-        <rect class="box" x="232" y="496" width="288" height="56" rx="6"/>
-        <text class="t-name" x="248" y="518">validate_node</text>
-        <text class="t-desc" x="248" y="538">model structure + DAX bracket balance</text>
-        <line class="ln" x1="376" y1="552" x2="376" y2="590" marker-end="url(#ah)"/>
-        <text class="t-lab t-warn" x="386" y="575">state unchanged, never blocks</text>
+        <!-- translate_expressions -->
+        <rect class="box-llm" x="236" y="320" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="342">translate_expressions</text>
+        <text class="t-desc" x="252" y="362">LLM drafts DAX for each pending calc</text>
+        <rect class="pill" x="478" y="330" width="34" height="16" rx="8"/>
+        <text class="t-pill" x="495" y="342" text-anchor="middle">LLM</text>
+        <line class="ln" x1="380" y1="376" x2="380" y2="414" marker-end="url(#ah)"/>
+        <text class="t-lab" x="390" y="399">dax_candidates</text>
 
-        <!-- 6 assemble -->
-        <rect class="box" x="232" y="592" width="288" height="56" rx="6"/>
-        <text class="t-name" x="248" y="614">assemble_node</text>
-        <text class="t-desc" x="248" y="634">write TMDL + PBIR files, UTF-8, no BOM</text>
-        <line class="ln" x1="376" y1="648" x2="376" y2="686" marker-end="url(#ah)"/>
-        <text class="t-lab" x="386" y="671">pbip_path</text>
+        <!-- validate_expressions + repair loop -->
+        <rect class="box" x="236" y="416" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="438">validate_expressions</text>
+        <text class="t-desc" x="252" y="458">accept valid DAX, else keep feedback</text>
+        <path class="ln-route" d="M524 444 H552 V360 H526" marker-end="url(#aha)"/>
+        <text class="t-route" transform="translate(546 402) rotate(-90)" text-anchor="middle">repair</text>
+        <line class="ln-route" x1="380" y1="472" x2="380" y2="526" marker-end="url(#aha)"/>
+        <text class="t-route" x="390" y="503">done</text>
 
-        <!-- 7 preflight -->
-        <rect class="box" x="232" y="688" width="288" height="56" rx="6"/>
-        <text class="t-name" x="248" y="710">preflight_validate_node</text>
-        <text class="t-desc" x="248" y="730">external PBIR check, off with --no-validate</text>
-        <line class="ln" x1="376" y1="744" x2="376" y2="782" marker-end="url(#ah)"/>
-        <text class="t-lab" x="386" y="767">MigrationResult</text>
+        <!-- map_visuals -->
+        <rect class="box-llm" x="236" y="528" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="550">map_visuals</text>
+        <text class="t-desc" x="252" y="570">worksheets &amp; dashboards → pages</text>
+        <rect class="pill" x="478" y="538" width="34" height="16" rx="8"/>
+        <text class="t-pill" x="495" y="550" text-anchor="middle">LLM</text>
+        <line class="ln" x1="380" y1="584" x2="380" y2="622" marker-end="url(#ah)"/>
+        <text class="t-lab" x="390" y="607">pages</text>
 
-        <!-- output -->
-        <rect class="box-out" x="232" y="784" width="288" height="56" rx="6"/>
-        <text class="t-name" x="248" y="806">&lt;out&gt;/&lt;name&gt;.pbip</text>
-        <text class="t-desc" x="248" y="826">issue counts printed · <tspan class="t-warn">exit code always 0</tspan></text>
+        <!-- validate_model -->
+        <rect class="box" x="236" y="624" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="646">validate_model</text>
+        <text class="t-desc" x="252" y="666">model structure + DAX bracket checks</text>
+        <line class="ln" x1="380" y1="680" x2="380" y2="718" marker-end="url(#ah)"/>
+        <text class="t-lab t-warn" x="390" y="703">issues only, never blocks</text>
 
-        <!-- report rail -->
-        <rect class="rail" x="16" y="112" width="150" height="632" rx="6"/>
-        <text class="t-title" x="30" y="136">MigrationReport</text>
-        <text class="t-lab" x="30" y="154">report.add(stage=…)</text>
-        <text class="t-tag" x="30" y="240">"model"</text>
-        <text class="t-tag" x="30" y="336">"expression"</text>
-        <text class="t-tag" x="30" y="432">"visual",</text>
-        <text class="t-tag" x="30" y="448">"dashboard"</text>
-        <text class="t-tag" x="30" y="528">"validate"</text>
-        <text class="t-tag" x="30" y="720">"preflight"</text>
-        <line class="ln-thin" x1="232" y1="236" x2="168" y2="236" marker-end="url(#ahm)"/>
-        <line class="ln-thin" x1="232" y1="332" x2="168" y2="332" marker-end="url(#ahm)"/>
-        <line class="ln-thin" x1="232" y1="428" x2="168" y2="428" marker-end="url(#ahm)"/>
-        <line class="ln-thin" x1="232" y1="524" x2="168" y2="524" marker-end="url(#ahm)"/>
-        <line class="ln-thin" x1="232" y1="716" x2="168" y2="716" marker-end="url(#ahm)"/>
-        <path class="ln-thin" d="M91 744 V812 H230" marker-end="url(#ahm)"/>
-        <text class="t-lab" x="100" y="800">issues → console / --report JSON</text>
+        <!-- assemble + router -->
+        <rect class="box" x="236" y="720" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="742">assemble</text>
+        <text class="t-desc" x="252" y="762">write TMDL + PBIR, UTF-8, no BOM</text>
+        <line class="ln-route" x1="380" y1="776" x2="380" y2="830" marker-end="url(#aha)"/>
+        <text class="t-route" x="390" y="807">validate</text>
+        <path class="ln-route" d="M236 760 H160 V956 H234" marker-end="url(#aha)"/>
+        <text class="t-route" x="168" y="860">skip</text>
+
+        <!-- validate_pbir -->
+        <rect class="box" x="236" y="832" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="854">validate_pbir</text>
+        <text class="t-desc" x="252" y="874">Microsoft's PBIR validator → issues</text>
+        <line class="ln" x1="380" y1="888" x2="380" y2="926" marker-end="url(#ah)"/>
+
+        <!-- END -->
+        <rect class="box-out" x="236" y="928" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="950">END → MigrationResult</text>
+        <text class="t-desc" x="252" y="970">&lt;name&gt;.pbip + issues · <tspan class="t-warn">exit code always 0</tspan></text>
+
+        <!-- issues note -->
+        <rect class="rail" x="16" y="616" width="128" height="80" rx="6"/>
+        <text class="t-title" x="28" y="640">state.issues</text>
+        <text class="t-desc" x="28" y="660">append reducer;</text>
+        <text class="t-desc" x="28" y="676">any node may add</text>
 
         <!-- Azure OpenAI -->
-        <rect class="box-llm-ext" x="600" y="304" width="184" height="56" rx="6"/>
-        <text class="t-title" x="614" y="326">Azure OpenAI</text>
-        <text class="t-desc" x="614" y="346">off with --no-llm or no env</text>
-        <line class="ln-llm" x1="520" y1="322" x2="598" y2="322" marker-end="url(#ahl)"/>
-        <text class="t-lab-llm" x="560" y="315" text-anchor="middle">per calc</text>
-        <path class="ln-llm" d="M520 414 H560 V348 H598" marker-end="url(#ahl)"/>
-        <text class="t-lab-llm" x="566" y="386">unmatched</text>
+        <rect class="box-llm-ext" x="620" y="320" width="244" height="56" rx="6"/>
+        <text class="t-title" x="634" y="342">Azure OpenAI</text>
+        <text class="t-desc" x="634" y="362">context.chat_model; None = no LLM</text>
+        <line class="ln-llm" x1="524" y1="336" x2="618" y2="336" marker-end="url(#ahl)"/>
+        <text class="t-lab-llm" x="571" y="330" text-anchor="middle">per calc</text>
+        <path class="ln-llm" d="M524 548 H600 V368 H618" marker-end="url(#ahl)"/>
+        <text class="t-lab-llm" transform="translate(612 458) rotate(-90)" text-anchor="middle">unmatched</text>
 
         <!-- visual catalog -->
-        <rect class="box" x="600" y="400" width="184" height="56" rx="6"/>
-        <text class="t-name-s" x="614" y="422">visual_catalog.json</text>
-        <text class="t-desc" x="614" y="442">roles, field kinds, caps</text>
-        <line class="ln" x1="520" y1="442" x2="598" y2="442" marker-end="url(#ah)"/>
-        <text class="t-lab" x="560" y="436" text-anchor="middle">checks</text>
+        <rect class="box" x="620" y="528" width="244" height="56" rx="6"/>
+        <text class="t-name-s" x="634" y="550">visual_catalog.json</text>
+        <text class="t-desc" x="634" y="570">roles, field kinds, caps</text>
+        <line class="ln" x1="524" y1="572" x2="618" y2="572" marker-end="url(#ah)"/>
+        <text class="t-lab" x="571" y="594" text-anchor="middle">checks</text>
 
         <!-- powerbi-report-author -->
-        <rect class="box-ext" x="600" y="688" width="184" height="56" rx="6"/>
-        <text class="t-name-s" x="614" y="710">powerbi-report-author</text>
-        <text class="t-desc" x="614" y="730">npm CLI, skipped if absent</text>
-        <line class="ln-ext" x1="520" y1="716" x2="598" y2="716" marker-end="url(#ahm)"/>
-        <text class="t-lab" x="560" y="710" text-anchor="middle">validate</text>
+        <rect class="box-ext" x="620" y="832" width="244" height="56" rx="6"/>
+        <text class="t-name-s" x="634" y="854">powerbi-report-author</text>
+        <text class="t-desc" x="634" y="874">npm CLI; INFO issue if absent</text>
+        <line class="ln-ext" x1="524" y1="860" x2="618" y2="860" marker-end="url(#ahm)"/>
+        <text class="t-lab" x="571" y="854" text-anchor="middle">subprocess</text>
       </svg>
     </div>
     <div class="legend" aria-hidden="true">
-      <span><i class="sw"></i>state passed to the next stage</span>
-      <span><i class="sw dash"></i>optional, skipped when not available</span>
+      <span><i class="sw"></i>always the next node</span>
+      <span><i class="sw route"></i>router decision (named route)</span>
       <span><i class="sw llm"></i>LLM call</span>
+      <span><i class="sw dash"></i>optional, outside the graph</span>
       <span><i class="chip out"></i>what the user gets</span>
       <span style="color:var(--warn)">red text = surprise</span>
     </div>
-    <figcaption>Stages run top to bottom from <span class="mono">STAGES</span> in <span class="mono">graph/state.py</span>. Ingest adds nothing to the report: a missing or malformed file raises and stops the run. Assemble adds nothing either. With <span class="mono">--no-llm</span> or no <span class="mono">T2PBI_AZURE_OPENAI_ENDPOINT</span>, both violet stages run their deterministic fallback.</figcaption>
+    <figcaption>The topology is <span class="mono">build_graph()</span> in <span class="mono">graph/pipeline.py</span>; nodes and routers are in <span class="mono">graph/nodes.py</span>. With <span class="mono">--no-llm</span> or no <span class="mono">T2PBI_AZURE_OPENAI_ENDPOINT</span>, the <span class="mono">no_llm</span> route skips translation and <span class="mono">map_visuals</span> uses the deterministic router. The repair loop stops after <span class="mono">max_translation_attempts</span> (default 2); anything still rejected becomes an ERROR and stays <span class="mono">BLANK()</span>. A missing or malformed workbook raises in <span class="mono">ingest</span> and stops the run.</figcaption>
   </figure>
 </section>
 
@@ -428,17 +450,17 @@ html { scroll-behavior: smooth; }
 <section id="llm">
   <div class="section-head">
     <h2>Where the LLM is called</h2>
-    <p>Two places only. Both are grounded on the model or the catalog, both re-check the answer in code, and both fall back to a deterministic result, so a missing or misbehaving LLM never produces a broken file.</p>
+    <p>Two places only, both reading the chat model from <code>runtime.context</code>. Both are grounded on the model or the catalog, both re-check the answer in code, and both fall back to a deterministic result, so a missing or misbehaving LLM never produces a broken file.</p>
   </div>
   <div class="table-wrap">
     <table>
       <thead><tr><th>Call</th><th>Asked</th><th>Answer checked by</th><th>Without an LLM</th></tr></thead>
       <tbody>
         <tr>
-          <td class="llm">translate_expressions</td>
+          <td class="llm">translate_expressions ⇄ validate_expressions</td>
           <td>One Tableau formula → one DAX expression, given every table and column name.</td>
-          <td>Strip code fences and <code>Name =</code>. Unbalanced brackets → retry once with the error. Unknown references → warning only.</td>
-          <td>Measure stays <code>BLANK()</code>, warning in report. Failed twice → ERROR, still <code>BLANK()</code>.</td>
+          <td><code>validate_expressions</code>: empty or unbalanced → kept pending and sent back on the <code>repair</code> route with the reason, up to <code>max_translation_attempts</code> (default 2). Unknown references → warning only.</td>
+          <td><code>no_llm</code> route → <code>flag_untranslated</code>: stays <code>BLANK()</code>, warning. Budget spent → ERROR, still <code>BLANK()</code>.</td>
         </tr>
         <tr>
           <td class="llm">LLMVisualRouter</td>
@@ -462,17 +484,12 @@ html { scroll-behavior: smooth; }
     <li>
       <h3>Validation never stops anything<span class="tag new">not in backlog</span></h3>
       <p>Validation errors are only written to the report. The files are still written and the CLI exits 0, so a script can't tell a clean run from a broken one.</p>
-      <span class="where">graph/state.py validate_node · cli.py _run_migrate</span>
+      <span class="where">graph/nodes.py validate_model · cli.py _run_migrate · now a one-edge change: a router after validate_model</span>
     </li>
     <li>
       <h3>Every calculated field becomes a measure<span class="tag new">not in backlog</span></h3>
       <p>A dimension-role calc, such as a calculated category or bucket, becomes a measure too, so it can't sit on an axis or in a slicer the way it did in Tableau.</p>
       <span class="where">mapping/model_mapper.py _map_measures</span>
-    </li>
-    <li>
-      <h3>The CLI doesn't use LangGraph<span class="tag new">not in backlog</span></h3>
-      <p><code>run_migration</code> is a plain loop over <code>STAGES</code>. <code>build_graph()</code> wires the same stages into a LangGraph graph, but nothing calls it and no test covers it, yet <code>langgraph</code> is a required dependency.</p>
-      <span class="where">graph/pipeline.py</span>
     </li>
     <li>
       <h3>Out-of-date skip message<span class="tag new">not in backlog</span></h3>
@@ -507,16 +524,17 @@ html { scroll-behavior: smooth; }
     <table>
       <thead><tr><th>src/t2pbi/…</th><th>Job</th></tr></thead>
       <tbody>
-        <tr><td>cli.py</td><td>Flags <code>--out</code>, <code>--no-llm</code>, <code>--no-validate</code>, <code>--report</code>; prints counts.</td></tr>
-        <tr><td>graph/state.py</td><td><code>PipelineState</code> and the seven stage functions. Start here.</td></tr>
-        <tr><td>graph/pipeline.py</td><td><code>run_migration</code> (used) and <code>build_graph</code> (unused).</td></tr>
+        <tr><td>cli.py</td><td>Flags <code>--out</code>, <code>--no-llm</code>, <code>--no-validate</code>, <code>--report</code> → a <code>MigrationContext</code>; prints counts.</td></tr>
+        <tr><td>graph/pipeline.py</td><td><code>build_graph()</code>: the topology, the only runner. <code>migrate()</code> invokes it. Start here.</td></tr>
+        <tr><td>graph/nodes.py</td><td>The nine nodes (thin, return partial updates) and the three routers.</td></tr>
+        <tr><td>graph/state.py</td><td><code>MigrationState</code> (data, serializable) and <code>MigrationContext</code> (chat model, flags, budgets).</td></tr>
         <tr><td>ingest/loader.py</td><td>Reads <code>.twb</code>, or the shallowest <code>.twb</code> inside a <code>.twbx</code> zip. Extracts are ignored.</td></tr>
         <tr><td>parse/tableau_parser.py</td><td>XML → Tableau IR: datasources, columns, calcs (LOD flagged), joins, parameters, worksheet shelves, dashboard zones.</td></tr>
         <tr><td>ir/tableau_ir.py</td><td>Pydantic models for what was read from Tableau.</td></tr>
         <tr><td>ir/powerbi_ir.py</td><td>Pydantic models for what will be written: tables, measures, relationships, pages, visuals.</td></tr>
         <tr><td>mapping/model_mapper.py</td><td>Tables, columns, measures, relationships.</td></tr>
         <tr><td>mapping/powerquery.py</td><td>M source per connection type.</td></tr>
-        <tr><td>mapping/expression_translator.py</td><td>Calc → DAX with the LLM, plus the retry.</td></tr>
+        <tr><td>mapping/expression_translator.py</td><td><code>translate_calc</code>, <code>check_dax</code>: helpers. The retry loop lives in the graph.</td></tr>
         <tr><td>mapping/visual_mapper.py</td><td>Worksheet and dashboard → pages and visuals.</td></tr>
         <tr><td>mapping/visual_decision.py</td><td><code>MappingDecision</code>, <code>Ambiguity</code>, <code>DefaultRouter</code>.</td></tr>
         <tr><td>mapping/visual_router_llm.py</td><td><code>LLMVisualRouter</code>.</td></tr>
@@ -566,7 +584,7 @@ python scripts\refresh_visual_catalog.py</pre>
 </section>
 
 <footer>
-  Checked against <span class="mono">main @ 9fc8c01</span> on 24 Nov 2026. If the code has moved since, trust the code, and update this map.
+  Checked against <span class="mono">main</span> after the LangGraph refactor, 24 Nov 2026. If the code has moved since, trust the code, and update this map.
 </footer>
 
 </div>

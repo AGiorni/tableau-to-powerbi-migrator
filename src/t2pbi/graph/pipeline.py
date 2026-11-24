@@ -1,71 +1,110 @@
-"""Orchestration: run the migration stages either directly or via a LangGraph graph.
+"""The migration graph: the one and only way a migration runs.
 
-``run_migration`` executes the fixed stage sequence and is the simplest entry point.
-``build_graph`` wires the same node functions into a LangGraph ``StateGraph`` for callers that
-want streaming, checkpointing, or to insert conditional repair edges later.
+[route] marks a conditional edge and the label its router returns::
+
+    START
+      -> ingest
+      -> map_model
+           [translate]            -> translate_expressions -> validate_expressions
+                                                                 [repair] -> translate_expressions
+                                                                 [done]   -> map_visuals
+           [no_llm]               -> flag_untranslated     -> map_visuals
+           [nothing_to_translate] -> map_visuals
+      -> map_visuals -> validate_model -> assemble
+           [validate] -> validate_pbir -> END
+           [skip]     -> END
+
+New stages are new nodes; new decisions are new conditional edges. Keep loops and gates in the
+graph, not inside nodes, so they stay visible (``build_graph().get_graph().draw_mermaid()``) and
+checkpointable.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import pairwise
 from pathlib import Path
-from typing import Any
 
-from t2pbi.graph.state import STAGES, PipelineState
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+
+from t2pbi.graph import nodes
+from t2pbi.graph.state import MigrationContext, MigrationState
 from t2pbi.ir.powerbi_ir import PBIModel
 from t2pbi.mapping.report import MigrationReport
 
 
 @dataclass
 class MigrationResult:
-    """Outcome of a migration run."""
+    """Typed view of the graph's final state, for callers that just want the outcome."""
 
     pbip_path: Path
     model: PBIModel
     report: MigrationReport
 
 
-def run_migration(
-    input_path: str,
-    out_dir: str,
-    chat_model: Any | None = None,
-    preflight: bool = False,
-) -> MigrationResult:
-    """Run all pipeline stages in order and return the result."""
+MigrationGraph = CompiledStateGraph[MigrationState, MigrationContext, MigrationState, MigrationState]
 
-    state = PipelineState(
-        input_path=input_path, out_dir=out_dir, chat_model=chat_model, preflight=preflight
+
+def build_graph() -> MigrationGraph:
+    """Build and compile the migration graph."""
+
+    graph = StateGraph(MigrationState, context_schema=MigrationContext)
+
+    graph.add_node("ingest", nodes.ingest)
+    graph.add_node("map_model", nodes.map_model)
+    graph.add_node("translate_expressions", nodes.translate_expressions)
+    graph.add_node("validate_expressions", nodes.validate_expressions)
+    graph.add_node("flag_untranslated", nodes.flag_untranslated)
+    graph.add_node("map_visuals", nodes.map_visuals)
+    graph.add_node("validate_model", nodes.validate_model)
+    graph.add_node("assemble", nodes.assemble)
+    graph.add_node("validate_pbir", nodes.validate_pbir)
+
+    graph.add_edge(START, "ingest")
+    graph.add_edge("ingest", "map_model")
+    graph.add_conditional_edges(
+        "map_model",
+        nodes.route_expressions,
+        {
+            "translate": "translate_expressions",
+            "no_llm": "flag_untranslated",
+            "nothing_to_translate": "map_visuals",
+        },
     )
-    for stage in STAGES:
-        state = stage(state)
+    graph.add_edge("translate_expressions", "validate_expressions")
+    graph.add_conditional_edges(
+        "validate_expressions",
+        nodes.route_after_expression_validation,
+        {"repair": "translate_expressions", "done": "map_visuals"},
+    )
+    graph.add_edge("flag_untranslated", "map_visuals")
+    graph.add_edge("map_visuals", "validate_model")
+    graph.add_edge("validate_model", "assemble")
+    graph.add_conditional_edges(
+        "assemble",
+        nodes.route_pbir_validation,
+        {"validate": "validate_pbir", "skip": END},
+    )
+    graph.add_edge("validate_pbir", END)
 
+    return graph.compile()
+
+
+def migrate(
+    input_path: str | Path,
+    out_dir: str | Path,
+    context: MigrationContext | None = None,
+) -> MigrationResult:
+    """Invoke the migration graph on one workbook and return its typed result."""
+
+    final = build_graph().invoke(
+        MigrationState(input_path=str(input_path), out_dir=str(out_dir)),
+        context=context or MigrationContext(),
+    )
+    state = MigrationState.model_validate(final)
     assert state.pbip_path is not None and state.model is not None
     return MigrationResult(
         pbip_path=Path(state.pbip_path),
         model=state.model,
-        report=state.report,
+        report=MigrationReport(issues=state.issues),
     )
-
-
-def build_graph():
-    """Build a LangGraph ``StateGraph`` over the migration stages.
-
-    Returns the compiled graph. Raises ``ImportError`` if LangGraph is not installed.
-    """
-
-    from langgraph.graph import END, START, StateGraph
-
-    graph = StateGraph(PipelineState)
-    node_names = []
-    for stage in STAGES:
-        name = stage.__name__
-        graph.add_node(name, stage)
-        node_names.append(name)
-
-    graph.add_edge(START, node_names[0])
-    for earlier, later in pairwise(node_names):
-        graph.add_edge(earlier, later)
-    graph.add_edge(node_names[-1], END)
-
-    return graph.compile()
