@@ -24,7 +24,19 @@ the hard reasoning: Tableau calc/LOD → DAX/M translation, visual/layout mappin
 
 ## Status
 
-Phase 0 (scaffolding) + Phase 1 (data-model migration) in progress. See `src/t2pbi/`.
+Working end to end on the sample workbooks:
+
+- **Data model** — tables, relationships, typed Power Query for CSV, Excel, SQL Server,
+  PostgreSQL and MySQL; calculated fields translated to DAX (LLM) or flagged for review.
+- **Worksheets → visuals** — shelf-aware mapping (orientation, time axis, series, small
+  multiples), Measure Names/Values sheets as tables, maps, and an LLM router for ambiguous
+  sheets, all checked against Power BI's visual catalog.
+- **Dashboards → report pages** with slicers.
+- **Validation** — `powerbi-report-author validate` runs after the build; diagnostics land in
+  the migration report.
+
+Open work is in [BACKLOG.md](BACKLOG.md); the reasoning behind past decisions is in
+[docs/DEVLOG.md](docs/DEVLOG.md).
 
 ## Quick start
 
