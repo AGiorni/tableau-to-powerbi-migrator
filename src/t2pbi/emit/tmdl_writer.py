@@ -126,13 +126,18 @@ def _render_relationships(relationships: list[PBIRelationship]) -> str:
 
 
 def _render_expression_property(header: str, expression: str, indent: int) -> list[str]:
-    """Render a default-property expression (``header = <expr>``) at the given indent level."""
+    """Render a default-property expression (``header = <expr>``) at the given indent level.
+
+    A multi-line body goes two levels deeper than the object: one level deeper than its properties
+    (``formatString:`` etc.). At the properties' level TOM silently reads the next property as part
+    of the expression — the file still loads, with corrupted DAX.
+    """
 
     prefix = _TAB * indent
     if "\n" not in expression:
         return [f"{prefix}{header} = {expression}"]
     lines = [f"{prefix}{header} ="]
-    lines.extend(_render_expression_body("", expression, base_indent=indent + 1))
+    lines.extend(_render_expression_body("", expression, base_indent=indent + 2))
     return lines
 
 

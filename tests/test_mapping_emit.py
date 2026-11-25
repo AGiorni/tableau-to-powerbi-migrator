@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from t2pbi.emit.tmdl_writer import render_semantic_model
-from t2pbi.ir.powerbi_ir import PBIDataType, SummarizeBy
+from t2pbi.fidelity.project import read_project
+from t2pbi.ir.powerbi_ir import PBIDataType, PBIMeasure, PBIModel, PBITable, SummarizeBy
 from t2pbi.mapping.model_mapper import UNTRANSLATED_DAX
 
 
@@ -61,3 +62,18 @@ def test_render_tmdl(superstore_twb, mapped):
     assert "measure 'Profit Ratio' = BLANK()" in table_tmdl
     # Partition uses tab indentation and an M source.
     assert "\tpartition" in table_tmdl
+
+
+def test_multiline_measure_keeps_its_properties(tmp_path):
+    # Regression: a body at the properties' indentation made TOM read `formatString: 0.0` as DAX.
+    measure = PBIMeasure(name="Doubled", expression="VAR s = 1\nRETURN\n    s * 2", format_string="0.0")
+    model = PBIModel(name="M", tables=[PBITable(name="T", measures=[measure])])
+    tmdl = render_semantic_model(model)["tables/T.tmdl"]
+
+    assert "\tmeasure Doubled =\n\t\t\tVAR s = 1\n\t\t\tRETURN\n\t\t\t    s * 2\n\t\tformatString: 0.0" in tmdl
+    # Read back the way TOM does: the body ends where the properties start.
+    for rel, text in render_semantic_model(model).items():
+        path = tmp_path / "M.SemanticModel" / "definition" / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    assert read_project(tmp_path).measures["Doubled"] == ("T", "VAR s = 1 RETURN s * 2")

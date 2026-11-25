@@ -331,3 +331,4 @@ them is almost certainly a regression — the tests in `tests/test_pipeline.py` 
 | Files written without a BOM | Load failure |
 | Visual container format `2.12.0` | Visual does not render |
 | Role names come from the visual catalog (`Rows`, not `SmallMultiples`) | Blank visual, no error |
+| Multi-line TMDL expressions indented one level deeper than the object's properties | The next property (e.g. `formatString`) is read as part of the DAX; the file still loads |
