@@ -9,36 +9,34 @@ from pathlib import Path
 
 from t2pbi.graph import MigrationContext, migrate
 from t2pbi.llm import build_chat_model
+from t2pbi.mapping.report import IssueSeverity
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="t2pbi", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    migrate = sub.add_parser("migrate", help="Migrate a Tableau workbook to a .pbip project.")
-    migrate.add_argument("input", help="Path to a .twb or .twbx file.")
-    migrate.add_argument("--out", default="out", help="Output directory (default: ./out).")
-    migrate.add_argument(
+    migrate_cmd = sub.add_parser("migrate", help="Migrate a Tableau workbook to a .pbip project.")
+    migrate_cmd.set_defaults(handler=_run_migrate)
+    migrate_cmd.add_argument("input", help="Path to a .twb or .twbx file.")
+    migrate_cmd.add_argument("--out", default="out", help="Output directory (default: ./out).")
+    migrate_cmd.add_argument(
         "--no-llm",
         action="store_true",
         help="Skip LLM expression translation (deterministic path only).",
     )
-    migrate.add_argument(
+    migrate_cmd.add_argument(
         "--no-validate",
         action="store_true",
         help="Skip the powerbi-report-author PBIR validation gate after assembly.",
     )
-    migrate.add_argument(
+    migrate_cmd.add_argument(
         "--report",
         help="Optional path to write the migration report as JSON.",
     )
 
     args = parser.parse_args(argv)
-
-    if args.command == "migrate":
-        return _run_migrate(args)
-    parser.error(f"Unknown command: {args.command}")
-    return 2
+    return args.handler(args)
 
 
 def _run_migrate(args: argparse.Namespace) -> int:
@@ -49,8 +47,8 @@ def _run_migrate(args: argparse.Namespace) -> int:
     result = migrate(args.input, args.out, context)
 
     print(f"Wrote project: {result.pbip_path}")
-    errors = [i for i in result.report.issues if i.severity.value == "error"]
-    warnings = [i for i in result.report.issues if i.severity.value == "warning"]
+    errors = [i for i in result.report.issues if i.severity is IssueSeverity.ERROR]
+    warnings = [i for i in result.report.issues if i.severity is IssueSeverity.WARNING]
     print(f"Issues: {len(errors)} error(s), {len(warnings)} warning(s).")
 
     if args.report:

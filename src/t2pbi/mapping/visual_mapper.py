@@ -7,20 +7,20 @@ the appropriate field wells for the chosen visual type.
 
 from __future__ import annotations
 
-import uuid
-
 from t2pbi.ir.powerbi_ir import (
     FieldKind,
     PBIFieldRef,
     PBIModel,
     PBIReportPage,
     PBIVisual,
+    new_object_name,
 )
 from t2pbi.ir.tableau_ir import (
     TableauDashboardZone,
     TableauFieldRef,
     TableauWorkbook,
     TableauWorksheet,
+    strip_brackets,
 )
 from t2pbi.mapping.report import IssueSeverity, MigrationReport
 from t2pbi.mapping.visual_catalog import enforce_wells
@@ -119,7 +119,7 @@ def map_visuals(
 
         visual = _to_visual(decision, wells, ws.name)
         by_worksheet[ws.name] = visual
-        pages.append(PBIReportPage(name=_new_id(), display_name=ws.name, visuals=[visual]))
+        pages.append(PBIReportPage(name=new_object_name(), display_name=ws.name, visuals=[visual]))
 
     pages.extend(
         _map_dashboards(workbook, by_worksheet, column_table, measure_table, calc_display, report)
@@ -131,7 +131,7 @@ def _to_visual(
     decision: MappingDecision, wells: dict[str, list[PBIFieldRef]], title: str
 ) -> PBIVisual:
     return PBIVisual(
-        name=_new_id(),
+        name=new_object_name(),
         visual_type=decision.visual_type,
         title=title,
         wells=wells,
@@ -173,7 +173,7 @@ def _map_dashboards(
                         f"Worksheet '{zone.worksheet}' has no migrated visual; omitted from dashboard.",
                     )
                     continue
-                visuals.append(source.model_copy(update={"name": _new_id(), **box}))
+                visuals.append(source.model_copy(update={"name": new_object_name(), **box}))
             elif zone.kind == "filter" and zone.field is not None:
                 field = _resolve_field(zone.field, column_table, measure_table, calc_display)
                 if field is None or (field.entity, field.property) in seen_fields:
@@ -192,12 +192,12 @@ def _map_dashboards(
                 if wells:
                     visuals.append(
                         PBIVisual(
-                            name=_new_id(), visual_type="slicer", title=field.property,
+                            name=new_object_name(), visual_type="slicer", title=field.property,
                             wells=wells, **box,
                         )
                     )
         if visuals:
-            pages.append(PBIReportPage(name=_new_id(), display_name=dash.name, visuals=visuals))
+            pages.append(PBIReportPage(name=new_object_name(), display_name=dash.name, visuals=visuals))
     return pages
 
 
@@ -328,8 +328,7 @@ def _dedup(fields: list[PBIFieldRef]) -> list[PBIFieldRef]:
 def _map_geographic(all_fields: list[PBIFieldRef]) -> MappingDecision | None:
     """Build an azureMap: dimensions become the location, the first measure sizes the points."""
 
-    dims = [f for f in all_fields if f.kind is FieldKind.COLUMN]
-    measures = [f for f in all_fields if f.kind is not FieldKind.COLUMN]
+    dims, measures = _split(all_fields)
     if not dims:
         return None
     wells: dict[str, list[PBIFieldRef]] = {"Category": dims}
@@ -390,10 +389,5 @@ def _calc_display_map(workbook: TableauWorkbook) -> dict[str, str]:
     mapping: dict[str, str] = {}
     for ds in workbook.datasources:
         for calc in ds.calculated_fields:
-            internal = calc.name[1:-1] if calc.name.startswith("[") else calc.name
-            mapping[internal] = calc.display_name
+            mapping[strip_brackets(calc.name)] = calc.display_name
     return mapping
-
-
-def _new_id() -> str:
-    return uuid.uuid4().hex[:20]

@@ -13,19 +13,6 @@ _BROKEN = "SUM('Superstore'[Sales]"
 _VALID = "SUM('Superstore'[Sales])"
 
 
-class _ScriptedChat:
-    """Returns queued responses in order (one per invoke); the last one repeats."""
-
-    def __init__(self, responses: list[str]) -> None:
-        self._responses = responses
-        self.prompts: list[str] = []
-
-    def invoke(self, messages):
-        self.prompts.append(messages[-1].content)
-        idx = min(len(self.prompts) - 1, len(self._responses) - 1)
-        return SimpleNamespace(content=self._responses[idx])
-
-
 def _run(twb, out_dir, context: MigrationContext) -> tuple[list[str], MigrationState]:
     """Run the graph once; return the node names in execution order and the final state."""
 
@@ -81,9 +68,9 @@ def test_no_llm_path(superstore_twb, tmp_path):
     ]
 
 
-def test_repair_loop_fixes_unbalanced_dax(superstore_twb, tmp_path):
+def test_repair_loop_fixes_unbalanced_dax(superstore_twb, tmp_path, fake_chat):
     # First pass: the first field gets broken DAX, the second valid. The repair pass fixes the first.
-    chat = _ScriptedChat([_BROKEN, _VALID])
+    chat = fake_chat([_BROKEN, _VALID])
     visited, state = _run(
         superstore_twb, tmp_path, MigrationContext(chat_model=chat, run_pbir_validation=False)
     )
@@ -104,8 +91,8 @@ def test_repair_loop_fixes_unbalanced_dax(superstore_twb, tmp_path):
     assert "Unbalanced parenthesis" in repairs[0]
 
 
-def test_attempt_budget_ends_loop_with_errors(superstore_twb, tmp_path):
-    chat = _ScriptedChat([_BROKEN])  # always unbalanced
+def test_attempt_budget_ends_loop_with_errors(superstore_twb, tmp_path, fake_chat):
+    chat = fake_chat(_BROKEN)  # always unbalanced
     context = MigrationContext(chat_model=chat, run_pbir_validation=False, max_translation_attempts=3)
 
     visited, state = _run(superstore_twb, tmp_path, context)

@@ -5,7 +5,6 @@ The translate/repair loop that uses these validators is tested in test_graph.py.
 
 from __future__ import annotations
 
-from t2pbi.ingest import load_workbook
 from t2pbi.ir.powerbi_ir import (
     Cardinality,
     PBIColumn,
@@ -15,8 +14,7 @@ from t2pbi.ir.powerbi_ir import (
     PBIRelationship,
     PBITable,
 )
-from t2pbi.mapping.model_mapper import map_model
-from t2pbi.parse import parse_workbook
+from t2pbi.mapping.report import IssueSeverity
 from t2pbi.validate import validate_dax, validate_model
 
 
@@ -75,7 +73,7 @@ def test_model_flags_missing_relationship_column():
         ],
     )
     findings = validate_model(model)
-    assert any("CustomerID" in f.message and f.severity == "error" for f in findings)
+    assert any("CustomerID" in f.message and f.severity is IssueSeverity.ERROR for f in findings)
 
 
 def test_model_flags_missing_partition():
@@ -84,10 +82,10 @@ def test_model_flags_missing_partition():
     assert any("partition" in f.message for f in findings)
 
 
-def test_real_sql_sample_model_is_valid(sales_sql_twb):
+def test_real_sql_sample_model_is_valid(sales_sql_twb, mapped):
     # The mapper adds the hidden join-key column, so the model must validate cleanly.
-    model = map_model(parse_workbook(load_workbook(sales_sql_twb))).model
-    errors = [f for f in validate_model(model) if f.severity == "error"]
+    model = mapped(sales_sql_twb).model
+    errors = [f for f in validate_model(model) if f.severity is IssueSeverity.ERROR]
     assert errors == []
 
     customers = next(t for t in model.tables if t.name == "Customers")

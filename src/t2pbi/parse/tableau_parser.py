@@ -30,6 +30,7 @@ from t2pbi.ir.tableau_ir import (
     TableauRole,
     TableauWorkbook,
     TableauWorksheet,
+    strip_brackets,
 )
 
 _PARAMETERS_DATASOURCE = "Parameters"
@@ -158,7 +159,6 @@ def _walk_relation(
             name,
             TableauRelation(
                 name=name,
-                type=rel_type or "table",
                 table=table,
                 connection_name=rel_el.get("connection"),
             ),
@@ -267,14 +267,14 @@ def _parse_metadata_columns(
 
     out: list[tuple[str, str, str, str]] = []
     for rec in ds_el.findall('.//metadata-record[@class="column"]'):
-        parent = _strip_brackets(rec.findtext("parent-name") or "")
+        parent = strip_brackets(rec.findtext("parent-name") or "")
         if parent not in logical_tables:
             continue
         local = rec.findtext("local-name") or ""
         if not local:
             continue
         dtype = rec.findtext("local-type") or ""
-        remote = rec.findtext("remote-name") or _strip_brackets(local)
+        remote = rec.findtext("remote-name") or strip_brackets(local)
         out.append((local, dtype, parent, remote))
     return out
 
@@ -300,9 +300,9 @@ def _parse_logical_relationships(
             joins.append(
                 TableauJoin(
                     left_table=left_table,
-                    left_column=_strip_brackets(left_ref or ""),
+                    left_column=strip_brackets(left_ref or ""),
                     right_table=right_table,
-                    right_column=_strip_brackets(right_ref or ""),
+                    right_column=strip_brackets(right_ref or ""),
                     join_type="relationship",
                 )
             )
@@ -329,11 +329,7 @@ def _split_qualified(ref: str | None) -> tuple[str, str] | None:
     if not ref or "].[" not in ref:
         return None
     table_part, _, col_part = ref.partition("].[")
-    return _strip_brackets(table_part + "]"), _strip_brackets("[" + col_part)
-
-
-def _strip_brackets(name: str) -> str:
-    return name[1:-1] if name.startswith("[") and name.endswith("]") else name
+    return strip_brackets(table_part + "]"), strip_brackets("[" + col_part)
 
 
 def _parse_column(col_el: etree._Element) -> TableauColumn:
@@ -465,7 +461,7 @@ def _parse_field_ref(ref: str | None) -> TableauFieldRef | None:
         return None
     # Take the last bracketed segment (drop the datasource qualifier).
     inner = ref.rsplit(".[", 1)[-1]
-    inner = _strip_brackets(inner if inner.startswith("[") else "[" + inner)
+    inner = strip_brackets(inner if inner.startswith("[") else "[" + inner)
     if not inner or inner.startswith((":", "__tableau", "Multiple Values")):
         return None
     if "(generated)" in inner:

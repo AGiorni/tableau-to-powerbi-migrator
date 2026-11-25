@@ -4,8 +4,8 @@ A worksheet is mapped to a :class:`MappingDecision` — a chosen visual type plu
 assignment. Clear-cut worksheets are decided by the deterministic rules in ``visual_mapper``.
 Ambiguous ones carry an :class:`Ambiguity` describing the competing interpretations; a
 :class:`VisualRouter` may then refine the choice. The built-in :class:`DefaultRouter` keeps the
-rule-based guess and marks it low-confidence so it surfaces for a reviewer. A future LLM-backed
-router can implement the same protocol without touching the deterministic path.
+rule-based guess and marks it low-confidence so it surfaces for a reviewer; ``LLMVisualRouter``
+asks a chat model and falls back to it.
 """
 
 from __future__ import annotations

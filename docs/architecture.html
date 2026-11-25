@@ -253,7 +253,7 @@ html { scroll-behavior: smooth; }
         <!-- validate_model -->
         <rect class="box" x="236" y="624" width="288" height="56" rx="6"/>
         <text class="t-name" x="252" y="646">validate_model</text>
-        <text class="t-desc" x="252" y="666">model structure + DAX bracket checks</text>
+        <text class="t-desc" x="252" y="666">tables, partitions, relationship keys</text>
         <line class="ln" x1="380" y1="680" x2="380" y2="718" marker-end="url(#ah)"/>
         <text class="t-lab t-warn" x="390" y="703">issues only, never blocks</text>
 
@@ -482,7 +482,7 @@ html { scroll-behavior: smooth; }
   </div>
   <ul class="gotchas">
     <li>
-      <h3>Validation never stops anything<span class="tag new">not in backlog</span></h3>
+      <h3>Validation never stops anything<span class="tag bl">backlog</span></h3>
       <p>Validation errors are only written to the report. The files are still written and the CLI exits 0, so a script can't tell a clean run from a broken one.</p>
       <span class="where">graph/nodes.py validate_model · cli.py _run_migrate · now a one-edge change: a router after validate_model</span>
     </li>
@@ -584,7 +584,7 @@ python scripts\refresh_visual_catalog.py</pre>
 </section>
 
 <footer>
-  Checked against <span class="mono">main</span> after the LangGraph refactor, 24 Nov 2026. If the code has moved since, trust the code, and update this map.
+  Checked against <span class="mono">main</span> after the dead-code sweep, 25 Nov 2026. If the code has moved since, trust the code, and update this map.
 </footer>
 
 </div>

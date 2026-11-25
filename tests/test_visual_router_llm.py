@@ -7,24 +7,6 @@ from t2pbi.mapping.visual_decision import Ambiguity, DecisionSource, MappingDeci
 from t2pbi.mapping.visual_router_llm import LLMVisualRouter
 
 
-class _Resp:
-    def __init__(self, content: str) -> None:
-        self.content = content
-
-
-class _FakeChat:
-    """Returns a canned string, or raises, to exercise the router without a provider."""
-
-    def __init__(self, content: str | None = None, raises: bool = False) -> None:
-        self._content = content
-        self._raises = raises
-
-    def invoke(self, _messages):
-        if self._raises:
-            raise RuntimeError("provider down")
-        return _Resp(self._content)
-
-
 def _ambiguous_decision() -> MappingDecision:
     return MappingDecision(
         visual_type="areaChart",
@@ -37,8 +19,8 @@ def _ambiguous_decision() -> MappingDecision:
     )
 
 
-def test_llm_router_applies_chosen_roles():
-    chat = _FakeChat(
+def test_llm_router_applies_chosen_roles(fake_chat):
+    chat = fake_chat(
         '{"visual_type":"areaChart","roles":{"Category":["Order Date"],"Y":["Sales"],'
         '"Series":["Segment"]},"rationale":"legend","confidence":0.8}'
     )
@@ -50,8 +32,8 @@ def test_llm_router_applies_chosen_roles():
     assert "Rows" not in resolved.wells
 
 
-def test_llm_router_falls_back_on_bad_json():
-    resolved = LLMVisualRouter(_FakeChat("sorry, not JSON")).resolve(_ambiguous_decision())
+def test_llm_router_falls_back_on_bad_json(fake_chat):
+    resolved = LLMVisualRouter(fake_chat("sorry, not JSON")).resolve(_ambiguous_decision())
 
     assert resolved.source is DecisionSource.DEFAULT
     assert resolved.confidence <= 0.5
@@ -59,32 +41,32 @@ def test_llm_router_falls_back_on_bad_json():
     assert {f.property for f in resolved.wells["Rows"]} == {"Segment"}
 
 
-def test_llm_router_falls_back_on_provider_error():
-    resolved = LLMVisualRouter(_FakeChat(raises=True)).resolve(_ambiguous_decision())
+def test_llm_router_falls_back_on_provider_error(fake_chat):
+    resolved = LLMVisualRouter(fake_chat(RuntimeError("provider down"))).resolve(_ambiguous_decision())
 
     assert resolved.source is DecisionSource.DEFAULT
 
 
-def test_llm_router_rejects_answer_missing_required_role():
+def test_llm_router_rejects_answer_missing_required_role(fake_chat):
     # Drops required "Y" -> answer is worse than the guess, so we keep the deterministic one.
-    chat = _FakeChat('{"visual_type":"areaChart","roles":{"Category":["Order Date"]}}')
+    chat = fake_chat('{"visual_type":"areaChart","roles":{"Category":["Order Date"]}}')
     resolved = LLMVisualRouter(chat).resolve(_ambiguous_decision())
 
     assert resolved.source is DecisionSource.DEFAULT
     assert "Y" in resolved.wells
 
 
-def test_llm_router_ignores_non_ambiguous_decision():
+def test_llm_router_ignores_non_ambiguous_decision(fake_chat):
     decision = MappingDecision(
         visual_type="tableEx",
         wells={"Values": [PBIFieldRef(entity="Orders", property="City")]},
     )
-    resolved = LLMVisualRouter(_FakeChat("{}")).resolve(decision)
+    resolved = LLMVisualRouter(fake_chat("{}")).resolve(decision)
 
     assert resolved.source is DecisionSource.RULES
 
 
-def test_llm_router_resolves_unmatched_sheet_from_available_fields():
+def test_llm_router_resolves_unmatched_sheet_from_available_fields(fake_chat):
     decision = MappingDecision(
         visual_type="",
         ambiguity=Ambiguity(
@@ -96,7 +78,7 @@ def test_llm_router_resolves_unmatched_sheet_from_available_fields():
             ],
         ),
     )
-    chat = _FakeChat(
+    chat = fake_chat(
         '{"visual_type":"pieChart","roles":{"Category":["Category"],"Y":["Sales"]},"confidence":0.7}'
     )
     resolved = LLMVisualRouter(chat).resolve(decision)

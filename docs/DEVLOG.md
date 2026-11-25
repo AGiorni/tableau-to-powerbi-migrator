@@ -9,6 +9,44 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-25 — Dead-code sweep after the graph refactor
+
+A review of `main` (vulture plus reading every module) for code nothing reaches and logic written
+twice. What was removed or merged, and why some of it is not obvious:
+
+- **The DAX check in `validate_model` is gone.** It re-ran the bracket check over every measure
+  as a "safety net", but since the graph refactor it could never fire: `validate_expressions`
+  only lets a candidate into the model after the identical check, and everything else stays
+  `BLANK()`. The expression loop is now the one place DAX is judged. If a future node writes DAX
+  by another route, it must go through `check_dax` too, not rely on a later sweep.
+- **IR fields that nothing filled or read were removed:** `PBIModel.expressions` /
+  `PBIExpression` (never populated, and the TMDL writer never emitted it, so it implied support
+  that didn't exist), `TableauDatasource.is_parameters`, `TableauRelation.type`,
+  `MappingResult.report`. Re-add `expressions` together with an emitter when parameters are
+  migrated.
+- **`langgraph>=0.2` was a false floor.** The graph uses `context_schema` and `Runtime`, which
+  arrived in LangGraph 0.6; an older install would have satisfied `pyproject.toml` and then
+  failed at import. `langchain-core` is now declared, since the code imports it directly.
+- **ImportError fallbacks in `llm/client.py` were removed.** `langchain-openai` and
+  `azure-identity` are required dependencies, so "not installed" could not happen. The imports
+  stay inside `build_chat_model` so the `--no-llm` path never loads them.
+- **Merged duplicates:** one `strip_brackets` (was four copies), one `new_object_name` for
+  page/visual ids, one `SCHEMA_BASE`, one `run_report_author` used by both the validation gate and
+  `scripts/refresh_visual_catalog.py`, and severity as `IssueSeverity` end to end instead of
+  strings mapped in each node. Tests share fixtures and a single `FakeChat` in `conftest.py`.
+
+**Kept deliberately:** `MigrationReport.has_errors` and the visual-mapping `confidence` /
+`rationale` look dead but are the hooks for two open decisions (see BACKLOG, *Decisions needed*).
+
+**Verified** the same way as the refactor: every sample migrated with no LLM, with a fake LLM that
+forces the repair loop, and with one whose visual-router answers are garbage. All emitted files
+and report issues were snapshotted before and after, and were identical across all nine runs. The
+shared CLI helper was checked against the real `powerbi-report-author` (its `catalog describe`
+output matches the committed catalog). None of the samples reaches the LLM visual router, so its
+fallback rests on the unit tests in `tests/test_visual_router_llm.py`.
+
+---
+
 ## 2026-11-24 — The LangGraph graph is the only runner
 
 **Context.** LangGraph was chosen at the start because this is an agentic accelerator:

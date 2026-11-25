@@ -1,4 +1,4 @@
-"""Post-build gate: run the offline ``powerbi-report-author validate`` CLI over an emitted PBIP.
+"""Run Microsoft's ``powerbi-report-author`` CLI; ``validate`` is the post-build PBIR gate.
 
 This is the deterministic correctness check for a migrated report — it catches invalid roles,
 schema violations, and layout problems before a developer ever opens the file. The CLI is an
@@ -14,23 +14,26 @@ import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
+from t2pbi.mapping.report import IssueSeverity
+
 _CLI = "powerbi-report-author"
 # The offline schema fetch failing is an environment artifact, not a defect in the file.
 _ENV_ONLY_CODES = {"PBIR_SCHEMA_UNREACHABLE"}
 
 
-def run_pbir_validation(pbip_path: str | Path, timeout: float = 120.0) -> dict | None:
-    """Validate a ``.pbip``/``.Report`` path with the CLI. Returns the parsed ``data`` payload.
+def run_report_author(*cli_args: str, timeout: float = 120.0) -> dict | None:
+    """Run ``powerbi-report-author <cli_args>`` and return its parsed JSON ``data`` payload.
 
-    Returns ``None`` when the CLI is not installed or its output cannot be parsed, so callers can
-    degrade gracefully. A non-zero exit (validation failure) still yields the diagnostics payload.
+    Returns ``None`` when the CLI is not installed, fails to run, or prints no JSON object, so
+    callers can degrade gracefully. A non-zero exit (e.g. a failed validation) still yields its
+    payload.
     """
 
     exe = shutil.which(_CLI)
     if exe is None:
         return None
 
-    args = [exe, "validate", str(pbip_path)]
+    args = [exe, *cli_args]
     # Windows npm shims are .cmd/.bat and must run through the command interpreter.
     if exe.lower().endswith((".cmd", ".bat")):
         args = ["cmd", "/c", *args]
@@ -45,18 +48,29 @@ def run_pbir_validation(pbip_path: str | Path, timeout: float = 120.0) -> dict |
         payload = json.loads(proc.stdout.strip())
     except (ValueError, TypeError):
         return None
+    if not isinstance(payload, dict):
+        return None
     return payload.get("data", payload)
 
 
-def iter_findings(result: dict) -> Iterator[tuple[str, str, str]]:
+def run_pbir_validation(pbip_path: str | Path) -> dict | None:
+    """Validate a ``.pbip``/``.Report`` path; ``None`` if the validator is unavailable."""
+
+    return run_report_author("validate", str(pbip_path))
+
+
+def iter_findings(result: dict) -> Iterator[tuple[IssueSeverity, str, str]]:
     """Yield ``(severity, code, message)`` for each diagnostic item in a validation payload.
 
-    Severity is ``"error"``/``"warning"``/``"info"``; environment-only codes are downgraded to info.
+    Unknown severities count as warnings; environment-only codes are downgraded to info.
     """
 
     diagnostics = result.get("diagnostics") or {}
     for code, entry in diagnostics.items():
-        base = entry.get("severity", "warning")
+        try:
+            base = IssueSeverity(entry.get("severity", "warning"))
+        except ValueError:
+            base = IssueSeverity.WARNING
+        severity = IssueSeverity.INFO if code in _ENV_ONLY_CODES else base
         for item in entry.get("items") or [{}]:
-            severity = "info" if code in _ENV_ONLY_CODES else base
             yield severity, code, item.get("message") or code

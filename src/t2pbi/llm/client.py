@@ -19,10 +19,9 @@ def build_chat_model(config: AzureOpenAIConfig | None = None) -> Any | None:
     if not config.is_configured:
         return None
 
-    try:
-        from langchain_openai import AzureChatOpenAI
-    except ImportError:
-        return None
+    # Imported here, not at module level, so the deterministic path never pays to load them.
+    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+    from langchain_openai import AzureChatOpenAI
 
     common = {
         "azure_endpoint": config.endpoint,
@@ -34,21 +33,7 @@ def build_chat_model(config: AzureOpenAIConfig | None = None) -> Any | None:
     if config.api_key:
         return AzureChatOpenAI(api_key=config.api_key, **common)
 
-    token_provider = _entra_token_provider(config.endpoint or "")
-    if token_provider is None:
-        return None
-    return AzureChatOpenAI(azure_ad_token_provider=token_provider, **common)
-
-
-def _entra_token_provider(endpoint: str):
-    """Build a bearer-token provider for Azure OpenAI using DefaultAzureCredential."""
-
-    try:
-        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-    except ImportError:
-        return None
-
-    credential = DefaultAzureCredential()
-    return get_bearer_token_provider(
-        credential, "https://cognitiveservices.azure.com/.default"
+    token_provider = get_bearer_token_provider(
+        DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
     )
+    return AzureChatOpenAI(azure_ad_token_provider=token_provider, **common)

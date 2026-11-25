@@ -30,6 +30,27 @@ decision worth remembering.
   unused.** *(verified 2026-11-24)* Harmless provenance today. Either use them for
   multi-datasource disambiguation or drop them from [tableau_ir.py](src/t2pbi/ir/tableau_ir.py).
 
+- [ ] **Number formats are not migrated.** *(verified 2026-11-25)* `PBIColumn.format_string` and
+  `PBIMeasure.format_string` are emitted by [tmdl_writer.py](src/t2pbi/emit/tmdl_writer.py) but
+  the mapper never sets them, so currency and percentages lose their formatting. Tableau keeps
+  the format on the `<column>` element (`default-format`); it needs reading and translating to
+  a .NET format string.
+
+## Decisions needed
+
+- [ ] **Should validation errors stop the run?** *(verified 2026-11-25)* Today `validate_model`
+  and `validate_pbir` only report: the `.pbip` is always written and the CLI always exits 0, so
+  a script can't tell a clean run from a broken one. Options: a non-zero exit code when
+  `MigrationReport.has_errors` (kept for this; currently unused), or a router after
+  `validate_model` that skips `assemble`, or both. Choosing is a behaviour change, not a
+  refactor; the graph makes either a one-edge change.
+
+- [ ] **Surface visual-mapping confidence and rationale, or drop them?** *(verified 2026-11-25)*
+  `MappingDecision.confidence` and `.rationale` are filled by the rules, `DefaultRouter` and
+  `LLMVisualRouter`, but nothing reads them: the "Review recommended" INFO issue in
+  [visual_mapper.py](src/t2pbi/mapping/visual_mapper.py) says only who decided. Recommended:
+  put both in that issue's `detail`, so a reviewer can triage low-confidence visuals first.
+
 ## Open questions
 
 - [ ] **Is `reference_pbip/` a fixture or scratch?** It is gitignored but present in the working

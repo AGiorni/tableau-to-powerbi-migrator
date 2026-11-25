@@ -12,37 +12,22 @@ import. This is a build-time developer tool; it is never invoked during a migrat
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
-_CLI = "powerbi-report-author"
+from t2pbi.validate.pbir_cli import run_report_author
+
 _OUT = (
     Path(__file__).resolve().parents[1]
     / "src" / "t2pbi" / "mapping" / "data" / "visual_catalog.json"
 )
 
 
-def _run(*cli_args: str) -> dict | None:
-    exe = shutil.which(_CLI)
-    if exe is None:
-        return None
-    argv = [exe, *cli_args]
-    if exe.lower().endswith((".cmd", ".bat")):
-        argv = ["cmd", "/c", *argv]
-    proc = subprocess.run(argv, capture_output=True, text=True, check=False)
-    try:
-        return json.loads(proc.stdout.strip()).get("data")
-    except (ValueError, AttributeError):
-        return None
-
-
 def main() -> int:
-    listing = _run("catalog", "list")
+    listing = run_report_author("catalog", "list")
     if listing is None:
         print(
-            f"'{_CLI}' not found or failed. "
+            "'powerbi-report-author' not found or failed. "
             "Install with: npm install -g @microsoft/powerbi-report-authoring-cli@latest",
             file=sys.stderr,
         )
@@ -51,7 +36,7 @@ def main() -> int:
     visuals: dict[str, dict] = {}
     skipped: list[str] = []
     for vtype in sorted(listing.get("visualTypes", [])):
-        described = _run("catalog", "describe", vtype)
+        described = run_report_author("catalog", "describe", vtype)
         if described is None or "roles" not in described:
             skipped.append(vtype)
             continue

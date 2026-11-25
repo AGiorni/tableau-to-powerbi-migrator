@@ -14,7 +14,7 @@ from typing import Any
 
 from t2pbi.ir.powerbi_ir import PBIFieldRef
 from t2pbi.mapping.visual_catalog import VISUAL_CATALOG, enforce_wells
-from t2pbi.mapping.visual_decision import DecisionSource, MappingDecision
+from t2pbi.mapping.visual_decision import DecisionSource, DefaultRouter, MappingDecision
 
 _SYSTEM_PROMPT = (
     "You are an expert in Tableau and Power BI report design. A Tableau worksheet maps ambiguously "
@@ -36,9 +36,10 @@ class LLMVisualRouter:
 
     def __init__(self, chat_model: Any) -> None:
         self._chat = chat_model
+        self._fallback = DefaultRouter()
 
     def resolve(self, decision: MappingDecision) -> MappingDecision:
-        if decision.ambiguity is None or self._chat is None:
+        if decision.ambiguity is None:
             return decision
 
         index = {f.property: f for fields in decision.wells.values() for f in fields}
@@ -46,14 +47,14 @@ class LLMVisualRouter:
             index.setdefault(field.property, field)
         parsed = self._ask(decision, index)
         if parsed is None:
-            return _as_default(decision)
+            return self._fallback.resolve(decision)
 
         visual_type, wells, rationale, confidence = parsed
         wells, _ = enforce_wells(visual_type, wells)
         spec = VISUAL_CATALOG.get(visual_type)
         # Reject an unknown, empty, or under-specified answer; keep the deterministic guess instead.
         if spec is None or not wells or any(not wells.get(r) for r in spec.required):
-            return _as_default(decision)
+            return self._fallback.resolve(decision)
 
         return decision.model_copy(
             update={
@@ -125,9 +126,3 @@ def _parse(
     raw_conf = data.get("confidence")
     confidence = float(raw_conf) if isinstance(raw_conf, (int, float)) else 0.6
     return visual_type, wells, rationale, max(0.0, min(1.0, confidence))
-
-
-def _as_default(decision: MappingDecision) -> MappingDecision:
-    return decision.model_copy(
-        update={"source": DecisionSource.DEFAULT, "confidence": min(decision.confidence, 0.5)}
-    )

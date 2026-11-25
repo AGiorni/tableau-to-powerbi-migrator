@@ -21,7 +21,7 @@ from t2pbi.mapping import expression_translator, model_mapper, visual_mapper
 from t2pbi.mapping.report import IssueSeverity, MigrationReport
 from t2pbi.mapping.visual_router_llm import LLMVisualRouter
 from t2pbi.parse import parse_workbook
-from t2pbi.validate import model_validate, validate_dax
+from t2pbi.validate import model_validate
 from t2pbi.validate.pbir_cli import iter_findings, run_pbir_validation
 
 # --------------------------------------------------------------------------------------------
@@ -162,21 +162,16 @@ def map_visuals(state: MigrationState, runtime: Runtime[MigrationContext]) -> di
 
 
 def validate_model(state: MigrationState) -> dict:
-    """Structural model checks plus a DAX syntax safety net. Findings are reported, not fatal."""
+    """Structural model checks (tables, partitions, relationship keys). Reported, not fatal.
+
+    DAX is not re-checked here: ``validate_expressions`` only lets syntactically valid DAX into the
+    model, and everything else stays ``BLANK()``.
+    """
 
     assert state.model is not None
     report = MigrationReport()
     for finding in model_validate.validate_model(state.model):
-        severity = IssueSeverity.ERROR if finding.severity == "error" else IssueSeverity.WARNING
-        report.add(severity, "validate", finding.object_name, finding.message)
-
-    # Only syntax breakage is an error here; reference issues were handled during translation,
-    # where they are legitimately just warnings.
-    for table in state.model.tables:
-        for measure in table.measures:
-            for issue in validate_dax(measure.expression, state.model):
-                if issue.kind == "delimiter":
-                    report.add(IssueSeverity.ERROR, "validate", measure.name, issue.message)
+        report.add(finding.severity, "validate", finding.object_name, finding.message)
     return {"issues": report.issues}
 
 
@@ -203,13 +198,8 @@ def validate_pbir(state: MigrationState) -> dict:
         )
         return {"issues": report.issues}
 
-    severities = {
-        "error": IssueSeverity.ERROR,
-        "warning": IssueSeverity.WARNING,
-        "info": IssueSeverity.INFO,
-    }
     for severity, code, message in iter_findings(result):
-        report.add(severities.get(severity, IssueSeverity.WARNING), "preflight", code, message)
+        report.add(severity, "preflight", code, message)
 
     report.add(
         IssueSeverity.INFO,

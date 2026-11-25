@@ -8,7 +8,7 @@ stub and signal a warning so the migration report can flag them.
 from __future__ import annotations
 
 from t2pbi.ir.powerbi_ir import PBIColumn, PBIDataType
-from t2pbi.ir.tableau_ir import TableauConnection, TableauRelation
+from t2pbi.ir.tableau_ir import TableauConnection, TableauRelation, strip_brackets
 
 _EMPTY_TABLE = "let\n    Source = #table({}, {})\nin\n    Source"
 
@@ -40,7 +40,7 @@ def build_m_source(
     if cls == "excel-direct":
         return _excel(connection, relation, columns), None
     if cls == "sqlserver":
-        return _sql_server(connection, relation), None
+        return _db("Sql.Database", connection, relation, default_schema=None), None
     if cls == "postgres":
         return _db("PostgreSQL.Database", connection, relation, default_schema="public"), None
     if cls == "mysql":
@@ -101,25 +101,14 @@ def _type_transform(columns: list[PBIColumn], source_step: str) -> str:
     return f"Typed = Table.TransformColumnTypes({source_step}, {{{', '.join(pairs)}}})"
 
 
-def _sql_server(connection: TableauConnection, relation: TableauRelation) -> str:
-    schema, item = _schema_item(connection, relation)
-    server = _esc(connection.server or "")
-    database = _esc(connection.dbname or "")
-    return (
-        "let\n"
-        f'    Source = Sql.Database("{server}", "{database}"),\n'
-        f'    Navigation = Source{{[Schema="{_esc(schema)}",Item="{_esc(item)}"]}}[Data]\n'
-        "in\n"
-        "    Navigation"
-    )
-
-
 def _db(
     func: str,
     connection: TableauConnection,
     relation: TableauRelation,
     default_schema: str | None,
 ) -> str:
+    """Database navigation query; a None ``default_schema`` uses the connection's, then dbo."""
+
     schema, item = _schema_item(connection, relation, default_schema=default_schema)
     server = _esc(connection.server or "")
     database = _esc(connection.dbname or "")
@@ -153,14 +142,10 @@ def _schema_item(
     table = relation.table
     if table and "].[" in table:
         left, _, right = table.partition("].[")
-        return _unbracket(left + "]"), _unbracket("[" + right)
+        return strip_brackets(left + "]"), strip_brackets("[" + right)
     if table:
-        return default_schema, _unbracket(table)
+        return default_schema, strip_brackets(table)
     return default_schema, relation.name
-
-
-def _unbracket(name: str) -> str:
-    return name[1:-1] if name.startswith("[") and name.endswith("]") else name
 
 
 def _esc(text: str) -> str:

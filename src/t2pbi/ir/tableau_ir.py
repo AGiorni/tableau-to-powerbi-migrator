@@ -50,7 +50,6 @@ class TableauRelation(BaseModel):
     """A physical table referenced by a datasource (``<relation type='table'/'text'>``)."""
 
     name: str = Field(description="Relation alias used in join clauses and the <cols> map.")
-    type: str = "table"
     table: str | None = Field(default=None, description="Physical object id, e.g. '[dbo].[Orders]'.")
     connection_name: str | None = Field(default=None, description="Named-connection this relation uses.")
 
@@ -86,7 +85,7 @@ class TableauColumn(BaseModel):
 
     @property
     def display_name(self) -> str:
-        return self.caption or _strip_brackets(self.name)
+        return self.caption or strip_brackets(self.name)
 
 
 class TableauCalculatedField(BaseModel):
@@ -104,7 +103,7 @@ class TableauCalculatedField(BaseModel):
 
     @property
     def display_name(self) -> str:
-        return self.caption or _strip_brackets(self.name)
+        return self.caption or strip_brackets(self.name)
 
 
 class TableauParameter(BaseModel):
@@ -118,7 +117,7 @@ class TableauParameter(BaseModel):
 
     @property
     def display_name(self) -> str:
-        return self.caption or _strip_brackets(self.name)
+        return self.caption or strip_brackets(self.name)
 
 
 class TableauDatasource(BaseModel):
@@ -126,9 +125,6 @@ class TableauDatasource(BaseModel):
 
     name: str
     caption: str | None = None
-    is_parameters: bool = Field(
-        default=False, description="True for the special 'Parameters' datasource."
-    )
     connections: list[TableauConnection] = Field(default_factory=list)
     columns: list[TableauColumn] = Field(default_factory=list)
     calculated_fields: list[TableauCalculatedField] = Field(default_factory=list)
@@ -208,7 +204,7 @@ class TableauWorkbook(BaseModel):
     dashboards: list[TableauDashboard] = Field(default_factory=list)
 
 
-def _strip_brackets(name: str) -> str:
-    """Remove Tableau's surrounding square brackets from an internal field name."""
+def strip_brackets(name: str) -> str:
+    """Remove the surrounding square brackets from a Tableau name ('[Sales]' -> 'Sales')."""
 
     return name[1:-1] if name.startswith("[") and name.endswith("]") else name

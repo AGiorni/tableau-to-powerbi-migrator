@@ -1,26 +1,31 @@
-"""Assemble a complete ``.pbip`` project folder on disk from a Power BI IR model.
+"""Assemble a complete ``.pbip`` project folder on disk from the Power BI IR.
 
-Layout produced (Phase 1 focuses on the semantic model; a minimal report scaffold is emitted
-so the project opens in Power BI Desktop):
+Layout produced:
 
 ```
 <out>/
 ├── <name>.pbip
 ├── .gitignore
 ├── <name>.SemanticModel/
+│   ├── .platform
 │   ├── definition.pbism
 │   └── definition/
 │       ├── database.tmdl
 │       ├── model.tmdl
-│       ├── relationships.tmdl
-│       └── tables/*.tmdl
+│       ├── relationships.tmdl          (only when there are relationships)
+│       └── tables/<table>.tmdl
 └── <name>.Report/
+    ├── .platform
     ├── definition.pbir
-    └── definition/
-        ├── report.json
-        └── pages/
-            ├── pages.json
-            └── <page>/page.json
+    ├── definition/
+    │   ├── version.json
+    │   ├── report.json
+    │   └── pages/
+    │       ├── pages.json
+    │       └── <page>/
+    │           ├── page.json
+    │           └── visuals/<visual>/visual.json
+    └── StaticResources/SharedResources/BaseThemes/<theme>.json
 ```
 
 Files are written as UTF-8 **without BOM**, as required for editing PBIP outside Desktop.
@@ -32,11 +37,9 @@ import json
 import uuid
 from pathlib import Path
 
-from t2pbi.emit.pbir_writer import build_page_json, build_visual_json
+from t2pbi.emit.pbir_writer import SCHEMA_BASE, build_page_json, build_visual_json
 from t2pbi.emit.tmdl_writer import render_semantic_model
-from t2pbi.ir.powerbi_ir import PBIModel, PBIReportPage
-
-_SCHEMA_BASE = "https://developer.microsoft.com/json-schemas/fabric"
+from t2pbi.ir.powerbi_ir import PBIModel, PBIReportPage, new_object_name
 
 # The base theme Power BI Desktop bundles into a blank report; it must exist on disk because
 # report.json references it via a resourcePackage.
@@ -97,12 +100,12 @@ def build_file_map(model: PBIModel, pages: list[PBIReportPage] | None = None) ->
 
 
 def _blank_page() -> PBIReportPage:
-    return PBIReportPage(name=uuid.uuid4().hex[:20], display_name="Page 1")
+    return PBIReportPage(name=new_object_name(), display_name="Page 1")
 
 
 def _pbip_pointer(name: str) -> dict:
     return {
-        "$schema": f"{_SCHEMA_BASE}/pbip/pbipProperties/1.0.0/schema.json",
+        "$schema": f"{SCHEMA_BASE}/pbip/pbipProperties/1.0.0/schema.json",
         "version": "1.0",
         "artifacts": [{"report": {"path": f"{name}.Report"}}],
         "settings": {"enableAutoRecovery": True},
@@ -111,7 +114,7 @@ def _pbip_pointer(name: str) -> dict:
 
 def _pbism() -> dict:
     return {
-        "$schema": f"{_SCHEMA_BASE}/item/semanticModel/definitionProperties/1.0.0/schema.json",
+        "$schema": f"{SCHEMA_BASE}/item/semanticModel/definitionProperties/1.0.0/schema.json",
         "version": "4.0",
         "settings": {},
     }
@@ -120,7 +123,7 @@ def _pbism() -> dict:
 def _platform(name: str, item_type: str) -> dict:
     # Fabric/PBIP item metadata; required for the project to validate and for Git integration.
     return {
-        "$schema": f"{_SCHEMA_BASE}/gitIntegration/platformProperties/2.0.0/schema.json",
+        "$schema": f"{SCHEMA_BASE}/gitIntegration/platformProperties/2.0.0/schema.json",
         "metadata": {"type": item_type, "displayName": name},
         "config": {"version": "2.0", "logicalId": str(uuid.uuid4())},
     }
@@ -128,7 +131,7 @@ def _platform(name: str, item_type: str) -> dict:
 
 def _pbir(name: str) -> dict:
     return {
-        "$schema": f"{_SCHEMA_BASE}/item/report/definitionProperties/2.0.0/schema.json",
+        "$schema": f"{SCHEMA_BASE}/item/report/definitionProperties/2.0.0/schema.json",
         "version": "4.0",
         "datasetReference": {"byPath": {"path": f"../{name}.SemanticModel"}},
     }
@@ -136,14 +139,14 @@ def _pbir(name: str) -> dict:
 
 def _report_version() -> dict:
     return {
-        "$schema": f"{_SCHEMA_BASE}/item/report/definition/versionMetadata/1.0.0/schema.json",
+        "$schema": f"{SCHEMA_BASE}/item/report/definition/versionMetadata/1.0.0/schema.json",
         "version": "2.0.0",
     }
 
 
 def _report() -> dict:
     return {
-        "$schema": f"{_SCHEMA_BASE}/item/report/definition/report/3.3.0/schema.json",
+        "$schema": f"{SCHEMA_BASE}/item/report/definition/report/3.3.0/schema.json",
         "themeCollection": {
             "baseTheme": {
                 "name": _THEME_NAME,
@@ -177,7 +180,7 @@ def _report() -> dict:
 
 def _pages(pages: list[PBIReportPage]) -> dict:
     return {
-        "$schema": f"{_SCHEMA_BASE}/item/report/definition/pagesMetadata/1.1.0/schema.json",
+        "$schema": f"{SCHEMA_BASE}/item/report/definition/pagesMetadata/1.1.0/schema.json",
         "pageOrder": [p.name for p in pages],
         "activePageName": pages[0].name,
     }

@@ -3,21 +3,13 @@
 from __future__ import annotations
 
 from t2pbi.emit.tmdl_writer import render_semantic_model
-from t2pbi.ingest import load_workbook
 from t2pbi.ir.powerbi_ir import Cardinality
-from t2pbi.mapping.model_mapper import map_model
-from t2pbi.parse import parse_workbook
-
-
-def _mapped(path):
-    return map_model(parse_workbook(load_workbook(path)))
-
 
 # --- Gap 1: Power Query M partitions -------------------------------------------------------
 
 
-def test_csv_partition_uses_csv_document(superstore_twb):
-    model = _mapped(superstore_twb).model
+def test_csv_partition_uses_csv_document(superstore_twb, mapped):
+    model = mapped(superstore_twb).model
     table = model.tables[0]
 
     assert table.partition is not None
@@ -33,8 +25,8 @@ def test_csv_partition_uses_csv_document(superstore_twb):
     assert '{"Quantity", Int64.Type}' in m
 
 
-def test_sqlserver_partitions(sales_sql_twb):
-    model = _mapped(sales_sql_twb).model
+def test_sqlserver_partitions(sales_sql_twb, mapped):
+    model = mapped(sales_sql_twb).model
     orders = next(t for t in model.tables if t.name == "Orders")
 
     m = orders.partition.m_source
@@ -45,14 +37,14 @@ def test_sqlserver_partitions(sales_sql_twb):
 # --- Gap 2: multi-table split + relationships ----------------------------------------------
 
 
-def test_join_splits_into_two_tables(sales_sql_twb):
-    model = _mapped(sales_sql_twb).model
+def test_join_splits_into_two_tables(sales_sql_twb, mapped):
+    model = mapped(sales_sql_twb).model
     names = {t.name for t in model.tables}
     assert names == {"Orders", "Customers"}
 
 
-def test_columns_attributed_to_correct_table(sales_sql_twb):
-    model = _mapped(sales_sql_twb).model
+def test_columns_attributed_to_correct_table(sales_sql_twb, mapped):
+    model = mapped(sales_sql_twb).model
     orders = next(t for t in model.tables if t.name == "Orders")
     customers = next(t for t in model.tables if t.name == "Customers")
 
@@ -70,14 +62,14 @@ def test_columns_attributed_to_correct_table(sales_sql_twb):
     assert name_col.source_column == "CustomerName"
 
 
-def test_measures_on_primary_table(sales_sql_twb):
-    model = _mapped(sales_sql_twb).model
+def test_measures_on_primary_table(sales_sql_twb, mapped):
+    model = mapped(sales_sql_twb).model
     orders = next(t for t in model.tables if t.name == "Orders")
     assert {m.name for m in orders.measures} == {"Avg Sale"}
 
 
-def test_relationship_emitted(sales_sql_twb):
-    model = _mapped(sales_sql_twb).model
+def test_relationship_emitted(sales_sql_twb, mapped):
+    model = mapped(sales_sql_twb).model
     assert len(model.relationships) == 1
 
     rel = model.relationships[0]
@@ -88,8 +80,8 @@ def test_relationship_emitted(sales_sql_twb):
     assert rel.cardinality is Cardinality.MANY_TO_ONE
 
 
-def test_relationships_tmdl_rendered(sales_sql_twb):
-    model = _mapped(sales_sql_twb).model
+def test_relationships_tmdl_rendered(sales_sql_twb, mapped):
+    model = mapped(sales_sql_twb).model
     files = render_semantic_model(model)
 
     assert "relationships.tmdl" in files

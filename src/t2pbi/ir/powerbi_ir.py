@@ -7,6 +7,7 @@ near-mechanical serialization step.
 
 from __future__ import annotations
 
+import uuid
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -101,14 +102,6 @@ class PBIRelationship(BaseModel):
     is_active: bool = True
 
 
-class PBIExpression(BaseModel):
-    """A model-level shared expression (e.g. a Power Query parameter)."""
-
-    name: str
-    expression: str
-    kind: str = Field(default="m", description="'m' for Power Query expressions.")
-
-
 class PBIModel(BaseModel):
     """Root of the Power BI IR — a single semantic model."""
 
@@ -117,7 +110,6 @@ class PBIModel(BaseModel):
     compatibility_level: int = 1567
     tables: list[PBITable] = Field(default_factory=list)
     relationships: list[PBIRelationship] = Field(default_factory=list)
-    expressions: list[PBIExpression] = Field(default_factory=list)
 
 
 class FieldKind(str, Enum):
@@ -154,6 +146,12 @@ class PBIVisual(BaseModel):
     wells: dict[str, list[PBIFieldRef]] = Field(default_factory=dict)
     sort_field: PBIFieldRef | None = Field(default=None, description="Field to sort the visual by.")
     sort_descending: bool = True
+
+
+def new_object_name() -> str:
+    """A fresh 20-hex-char name for a report page or visual (also its folder name)."""
+
+    return uuid.uuid4().hex[:20]
 
 
 class PBIReportPage(BaseModel):

@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from t2pbi.ir.powerbi_ir import FieldKind, PBIFieldRef, PBIReportPage, PBIVisual
 
-_SCHEMA_BASE = "https://developer.microsoft.com/json-schemas/fabric"
+# Root of every Fabric/PBIR JSON schema URL the emitter writes.
+SCHEMA_BASE = "https://developer.microsoft.com/json-schemas/fabric"
 
-# Aggregation Function enum -> (queryRef short name, nativeQueryRef label).
-# queryRef short name + display label per QueryAggregateFunction enum (official PBIR docs).
+# QueryAggregateFunction enum -> (queryRef short name, nativeQueryRef label), per the PBIR docs.
 # Function 2 is the "Count" enum (distinct count in the UI); 5 is "CountNonNull" (plain count).
 _FUNC_NAMES = {
     0: ("Sum", "Sum"),
@@ -42,7 +42,7 @@ def build_visual_json(visual: PBIVisual) -> dict:
             "isDefaultSort": True,
         }
     return {
-        "$schema": f"{_SCHEMA_BASE}/item/report/definition/visualContainer/2.12.0/schema.json",
+        "$schema": f"{SCHEMA_BASE}/item/report/definition/visualContainer/2.12.0/schema.json",
         "name": visual.name,
         "position": {
             "x": visual.x,
@@ -82,7 +82,7 @@ def _literal(value: str) -> dict:
 
 def build_page_json(page: PBIReportPage) -> dict:
     return {
-        "$schema": f"{_SCHEMA_BASE}/item/report/definition/page/2.1.0/schema.json",
+        "$schema": f"{SCHEMA_BASE}/item/report/definition/page/2.1.0/schema.json",
         "name": page.name,
         "displayName": page.display_name,
         "displayOption": "FitToPage",

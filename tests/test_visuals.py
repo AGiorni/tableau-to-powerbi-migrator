@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import pytest
 
 from t2pbi.emit.pbir_writer import build_visual_json
 from t2pbi.ingest import load_workbook
@@ -12,7 +12,15 @@ from t2pbi.mapping.report import MigrationReport
 from t2pbi.mapping.visual_mapper import map_visuals
 from t2pbi.parse import parse_workbook
 
-_BOOK1 = Path(__file__).resolve().parents[1] / "samples" / "input" / "Book1.twb"
+
+@pytest.fixture
+def book1(book1_twb):
+    """Book1 parsed, with its report pages keyed by display name."""
+
+    workbook = parse_workbook(load_workbook(book1_twb))
+    model = map_model(workbook, MigrationReport()).model
+    pages = map_visuals(workbook, model, MigrationReport())
+    return workbook, {p.display_name: p for p in pages}
 
 
 def test_visual_json_shapes_match_reference():
@@ -48,6 +56,7 @@ def test_visual_title_emitted_from_name():
     title = build_visual_json(visual)["visual"]["visualContainerObjects"]["title"][0]
     assert title["properties"]["text"]["expr"]["Literal"]["Value"] == "'Sales by Category'"
 
+
 def test_measure_field_expr():
     visual = PBIVisual(
         name="v",
@@ -59,17 +68,10 @@ def test_measure_field_expr():
     assert y["queryRef"] == "Orders.Profit Ratio"
 
 
-def test_map_visuals_book1_if_present():
-    if not _BOOK1.exists():
-        return
-
-    workbook = parse_workbook(load_workbook(_BOOK1))
-    model = map_model(workbook).model
-    pages = map_visuals(workbook, model, MigrationReport())
+def test_map_visuals_book1(book1):
+    _, by_name = book1
 
     # Each page has one visual; at least the two bar/area sheets mapped.
-    assert pages
-    by_name = {p.display_name: p for p in pages}
     assert "Sales by Category" in by_name
 
     sales_cat = by_name["Sales by Category"].visuals[0]
@@ -88,20 +90,14 @@ def test_map_visuals_book1_if_present():
     assert {f.property for f in city.wells.get("Category", [])} == {"City"}
 
 
-def test_dashboard_page_with_slicers_book1_if_present():
-    if not _BOOK1.exists():
-        return
-
-    workbook = parse_workbook(load_workbook(_BOOK1))
+def test_dashboard_page_with_slicers_book1(book1):
+    workbook, by_name = book1
     # Dashboard zones are parsed: worksheets + filter cards.
     dash = workbook.dashboards[0]
     assert dash.name == "Executive Overview"
     assert any(z.kind == "worksheet" for z in dash.zones)
     assert any(z.kind == "filter" for z in dash.zones)
 
-    model = map_model(workbook).model
-    pages = map_visuals(workbook, model, MigrationReport())
-    by_name = {p.display_name: p for p in pages}
     assert "Executive Overview" in by_name
 
     exec_page = by_name["Executive Overview"]
@@ -116,17 +112,11 @@ def test_dashboard_page_with_slicers_book1_if_present():
     assert charts and any(v.x > 100 for v in charts)
 
 
-def test_kpi_measure_values_table_book1_if_present():
-    if not _BOOK1.exists():
-        return
-
-    workbook = parse_workbook(load_workbook(_BOOK1))
+def test_kpi_measure_values_table_book1(book1):
+    workbook, by_name = book1
     kpi_ws = next(w for w in workbook.worksheets if w.name == "Key Performance Indicators")
     assert kpi_ws.measure_names  # measures captured from the Measure Names filter
 
-    model = map_model(workbook).model
-    pages = map_visuals(workbook, model, MigrationReport())
-    by_name = {p.display_name: p for p in pages}
     assert "Key Performance Indicators" in by_name
 
     kpi = by_name["Key Performance Indicators"].visuals[0]
@@ -135,17 +125,11 @@ def test_kpi_measure_values_table_book1_if_present():
     assert {"Discount", "Profit", "Sales", "profit ratio"} <= props
 
 
-def test_map_worksheet_book1_if_present():
-    if not _BOOK1.exists():
-        return
-
-    workbook = parse_workbook(load_workbook(_BOOK1))
+def test_map_geographic_worksheet_book1(book1):
+    workbook, by_name = book1
     geo = next(w for w in workbook.worksheets if w.name == "profit ratio by geography")
     assert geo.is_map
 
-    model = map_model(workbook).model
-    pages = map_visuals(workbook, model, MigrationReport())
-    by_name = {p.display_name: p for p in pages}
     assert "profit ratio by geography" in by_name
 
     geo_visual = by_name["profit ratio by geography"].visuals[0]

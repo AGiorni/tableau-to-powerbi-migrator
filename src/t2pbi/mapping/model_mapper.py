@@ -69,15 +69,13 @@ class MappingResult:
     """Output of the model-mapping stage."""
 
     model: PBIModel
-    report: MigrationReport
     # Calculated fields awaiting DAX translation, keyed by "<table>::<measure>".
     pending_expressions: dict[str, TableauCalculatedField] = field(default_factory=dict)
 
 
-def map_model(workbook: TableauWorkbook, report: MigrationReport | None = None) -> MappingResult:
+def map_model(workbook: TableauWorkbook, report: MigrationReport) -> MappingResult:
     """Map a Tableau workbook IR to a Power BI model IR (data-model structure only)."""
 
-    report = report or MigrationReport()
     model = PBIModel(name=workbook.source_name)
     pending: dict[str, TableauCalculatedField] = {}
 
@@ -97,7 +95,7 @@ def map_model(workbook: TableauWorkbook, report: MigrationReport | None = None) 
             r for r in relationships if r.from_table in kept_names and r.to_table in kept_names
         )
 
-    return MappingResult(model=model, report=report, pending_expressions=pending)
+    return MappingResult(model=model, pending_expressions=pending)
 
 
 def _map_datasource(
@@ -194,12 +192,7 @@ def _synthetic_relation(ds: TableauDatasource) -> TableauRelation:
     """Build a single relation for datasources that expose no explicit <relation> element."""
 
     conn = ds.connections[0] if ds.connections else None
-    rel_type = "text" if conn and conn.cls in {"textscan", "excel-direct"} else "table"
-    return TableauRelation(
-        name=ds.display_name,
-        type=rel_type,
-        connection_name=conn.name if conn else None,
-    )
+    return TableauRelation(name=ds.display_name, connection_name=conn.name if conn else None)
 
 
 def _map_measures(

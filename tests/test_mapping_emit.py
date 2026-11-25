@@ -3,18 +3,12 @@
 from __future__ import annotations
 
 from t2pbi.emit.tmdl_writer import render_semantic_model
-from t2pbi.ingest import load_workbook
 from t2pbi.ir.powerbi_ir import PBIDataType, SummarizeBy
-from t2pbi.mapping.model_mapper import UNTRANSLATED_DAX, map_model
-from t2pbi.parse import parse_workbook
+from t2pbi.mapping.model_mapper import UNTRANSLATED_DAX
 
 
-def _model(path):
-    return map_model(parse_workbook(load_workbook(path)))
-
-
-def test_map_model_structure(superstore_twb):
-    result = _model(superstore_twb)
+def test_map_model_structure(superstore_twb, mapped):
+    result = mapped(superstore_twb)
     model = result.model
 
     assert model.name == "superstore"
@@ -35,8 +29,8 @@ def test_map_model_structure(superstore_twb):
     assert measure_names == {"Profit Ratio", "Sales per Customer"}
 
 
-def test_pending_expressions_flagged(superstore_twb):
-    result = _model(superstore_twb)
+def test_pending_expressions_flagged(superstore_twb, mapped):
+    result = mapped(superstore_twb)
 
     assert set(result.pending_expressions) == {
         "Superstore::Profit Ratio",
@@ -47,8 +41,8 @@ def test_pending_expressions_flagged(superstore_twb):
         assert measure.expression == UNTRANSLATED_DAX
 
 
-def test_render_tmdl(superstore_twb):
-    model = _model(superstore_twb).model
+def test_render_tmdl(superstore_twb, mapped):
+    model = mapped(superstore_twb).model
     files = render_semantic_model(model)
 
     assert "database.tmdl" in files
