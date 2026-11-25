@@ -9,6 +9,46 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-25 — Fidelity step 1a: structural expectations and a ratchet
+
+**What.** `src/t2pbi/fidelity/` scores an emitted project against a hand-reviewed expectations
+file per workbook (`samples/expected/<name>.toml`): for each Tableau sheet, the page, the
+acceptable visual types and the fields per role a *faithful* Power BI report would have.
+`scripts/fidelity.py` runs it; `tests/test_fidelity_structural.py` keeps it honest.
+
+**Decisions.**
+- *Expectations state the truth, not today's output.* What t2pbi fails today is listed per check
+  under `known_gaps` with the reason. The test is a ratchet: an unexpected failure fails it, and so
+  does a known gap that starts passing (delete it from the file), so the score can only be moved
+  on purpose.
+- *Judged on the files, not the IR.* The scorer reads `page.json` / `visual.json` and the TMDL
+  measures, so writer bugs count against fidelity.
+- *Role names are checked against the visual catalog* when the file is loaded: an expectation
+  can't use a role that none of its allowed visual types has (the `SmallMultiples` trap again).
+- *TOML, not YAML*: Python reads it with the standard library, so no new dependency.
+- *Book1 only.* `superstore.twb`'s only worksheet has empty shelves and `sales_sql.twb` has none,
+  so neither has anything to be faithful to; they stay model-mapping fixtures.
+- *Reference screenshots come from the user*, once per workbook (`samples/reference/Book1/`,
+  later a CLI option), with the embedded thumbnails as fallback. The user's screenshots included
+  Tableau's shelf panes and confirmed every expectation drafted from the XML; they also showed
+  things I hadn't looked for in the XML: custom titles with dynamic filter inserts, number
+  formats, an ascending sort and value labels. The point for the app: a reference picture
+  surfaces gaps nobody thought to write a rule for. Names are matched loosely (case, spaces and
+  punctuation ignored), because people won't type `Tooltip_ Profit Ratio by City.png`.
+
+**Baseline.** Book1 scores **45/62 (73%)**; all 17 failures are known gaps, each a verified
+BACKLOG item: date parts ignored, dimension calcs lost from colour, tooltip encodings not
+migrated, viz-in-tooltip sheets as normal pages, count-of-table fields dropped, area charts not
+stacked, map colour measure used as bubble size, custom titles not migrated. The dashboard scores
+7/7.
+
+**Found on the way: a latent TMDL writer bug.** A multi-line measure is written with its body at
+the same indentation as its properties, so TOM reads the next property (e.g. `formatString`) as
+part of the DAX — silently: the file still loads. Single-line measures and today's output (no
+format strings) are unaffected. Fixed separately; see the format-constraints table.
+
+---
+
 ## 2026-11-25 — Step 0: pinned toolchain, and what the Power BI tools can really do
 
 **Decisions taken while planning the roadmap.** LLM: Azure OpenAI through the existing client

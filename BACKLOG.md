@@ -21,6 +21,18 @@ now, GitHub Actions for CI, and an agent that edits PBIR/TMDL files directly. In
    when available) and data, the Power BI output rendered through the Desktop Bridge (page PNGs)
    and queried with DAX through the Authoring MCP server, and a fidelity score. Comes first:
    without a measurement we can't tell whether the agent helps.
+   - [x] *1a. Structural* *(done 2026-11-25)*: `src/t2pbi/fidelity/`, `samples/expected/Book1.toml`,
+     `scripts/fidelity.py`, ratchet test; checked against the user's Tableau screenshots in
+     `samples/reference/Book1/`. Baseline: Book1 **45/62 (73%)**, all 17 failures known gaps.
+   - [ ] *1b. Numeric* (DAX through the Authoring MCP server against Desktop). Reference values
+     for Book1 are in the KPI screenshot: Count of Orders 10,194, Count of Returns 296, Avg.
+     Discount 15.54%, Profit $292,296.81, Profit per order 29, Quantity 38,654, Sales
+     $2,326,534.35, Sales per Customer 2,908.
+   - [ ] *1c. Visual* (Desktop Bridge screenshots against Tableau references, LLM-as-judge).
+     References are **screenshots the user supplies once per workbook** (one PNG per sheet,
+     named after it — `samples/reference/<workbook>/`, later a `t2pbi migrate
+     --reference-images <folder>` option), falling back to the workbook's embedded 192px
+     thumbnails when none are given. Same mechanism for the yardstick and for the app.
 2. [ ] **`validate_tmdl` node.** A small .NET tool in the repo (`tools/`) that loads the written
    TMDL with TOM's `TmdlSerializer` and prints JSON diagnostics; a report-only graph node after
    `assemble`, skipped with an INFO issue when .NET is unavailable, mirroring `validate_pbir`.
@@ -53,6 +65,36 @@ doesn't diff every file.
   [visual_mapper.py](src/t2pbi/mapping/visual_mapper.py) as an aggregation code that
   `_AGG_FUNCTION` doesn't know, so the date becomes a plain column. Book1's "Sales by Category" is
   monthly in Tableau and a flat daily line in Power BI (seen in the step-0 screenshots).
+
+- [ ] **Custom worksheet titles are not migrated.** *(verified 2026-11-25)* Tableau keeps a
+  sheet's title in `<layout-options><title><formatted-text>` as text runs with placeholders —
+  `<Sheet Name>` and field inserts such as `<[State/Province]>` that show the current filter
+  ("All"). The parser never reads it, so every visual is titled with the sheet name: Book1's KPI
+  table should read "Executive Overview - Profitability …" and the tooltip sheet "Profit Ratio by
+  City". Static text maps to the title; dynamic inserts need a measure-driven title.
+
+- [ ] **Viz-in-tooltip sheets become ordinary pages.** *(verified 2026-11-25)* A sheet embedded
+  in another sheet's tooltip (`<Sheet name=…>` in the tooltip text, e.g. Book1's "Tooltip: Profit
+  Ratio by City") should become a hidden report-page tooltip (page.json `"type": "Tooltip"`,
+  `"visibility": "HiddenInViewMode"`) used by the host visual; `map_visuals` makes every worksheet
+  a normal page.
+
+- [ ] **Tooltip encodings are not migrated.** *(verified 2026-11-25)* Fields on Tableau's tooltip
+  shelf (Book1: `sum(Profit)` on both area charts) should go in the visual's `Tooltips` role;
+  `_map_worksheet` in [visual_mapper.py](src/t2pbi/mapping/visual_mapper.py) only reads the colour
+  encoding.
+
+- [ ] **Count-of-table fields are dropped.** *(verified 2026-11-25)* Tableau's per-table row
+  count (`Orders_4666…:cnt`, shown as "Count of Orders") doesn't resolve to a model field, so
+  Book1's KPI table loses Count of Orders and Count of Returns. Map it to a `COUNTROWS` measure.
+
+- [ ] **Area charts are never stacked.** *(verified 2026-11-25)* Tableau stacks area marks by
+  default; `_VERTICAL_TYPE` maps `Area` to `areaChart` (overlapping) rather than
+  `stackedAreaChart`. Matters once colour splits are migrated.
+
+- [ ] **Map colour measures become bubble sizes.** *(verified 2026-11-25)* `_map_geographic`
+  puts the first measure in `Size`; Book1's map colours states by profit ratio (a filled map).
+  Azure Map colours by a measure through formatting, so this needs a formatting rule, not a role.
 
 - [ ] **Dimension-role calculated fields become measures, so colour splits are dropped.**
   *(verified 2026-11-25)* Every calc maps to a measure in

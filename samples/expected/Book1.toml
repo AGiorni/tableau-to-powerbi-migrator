@@ -1,0 +1,123 @@
+# Structural expectations for samples/input/Book1.twb.
+#
+# What each Tableau sheet shows, stated as a faithful Power BI report would show it — the truth,
+# not what t2pbi produces today. Read from the workbook XML and checked against the reference
+# screenshots in samples/reference/Book1/ (taken in Tableau, shelves visible). Field-spec syntax
+# and check ids: src/t2pbi/fidelity/expectations.py.
+#
+# known_gaps: checks t2pbi fails today, each with the reason (all tracked in BACKLOG.md). The test
+# fails if a known gap starts passing, so remove the line when the gap is fixed.
+#
+# title: the static part of the title Tableau displays. Several titles end with a dynamic insert
+# of the State/Province filter (shown as "All"), which the check allows after the static text.
+
+workbook = "Book1.twb"
+
+[[sheet]]
+name = "Key Performance Indicators"
+# A Measure Names / Measure Values text table: one row of nine headline numbers.
+# Title in Tableau: "Executive Overview - Profitability <State/Province filter>".
+title = "Executive Overview - Profitability"
+visual = ["tableEx", "pivotTable", "multiRowCard", "cardVisual"]
+fields = [
+    "Orders:rowcount",
+    "Returns:rowcount",
+    "Discount:avg",
+    "Profit:sum",
+    "Profit per order:measure",
+    "Quantity:sum",
+    "Sales:sum",
+    "Sales per Customer:measure",
+    "profit ratio:measure",
+]
+known_gaps."title" = "custom worksheet titles are not migrated (the sheet name is used)"
+known_gaps."fields[Orders:rowcount]" = "Tableau's count-of-table fields (Count of Orders) are dropped"
+known_gaps."fields[Returns:rowcount]" = "Tableau's count-of-table fields (Count of Returns) are dropped"
+notes = [
+    "Not checked: number formats (currency for Profit and Sales, % for Avg. Discount, whole numbers).",
+]
+
+[[sheet]]
+name = "Sales by Category"
+# Area marks, MONTH(Order Date) across, one panel per Category, coloured by the
+# "Order Profitable?" calculation (Profitable / Unprofitable); SUM(Profit) in the tooltip.
+# Tableau stacks area marks by default. Title: "<Sheet Name> <State/Province filter>".
+title = "Sales by Category"
+visual = ["stackedAreaChart"]
+roles.Category = ["Order Date:month"]
+roles.Y = ["Sales:sum"]
+roles.Rows = ["Category"]
+roles.Series = ["Order Profitable?"]
+roles.Tooltips = ["Profit:sum"]
+known_gaps."visual-type" = "Tableau stacks area marks; the mapper always emits areaChart"
+known_gaps."Category[Order Date:month]" = "date parts on shelves (tmn:) are ignored, so the axis is daily"
+known_gaps."Category:no-extras" = "date parts on shelves (tmn:) are ignored: plain Order Date is bound"
+known_gaps."Series[Order Profitable?]" = "dimension calculations become measures, so the colour split is dropped"
+known_gaps."Tooltips[Profit:sum]" = "tooltip encodings are not migrated"
+
+[[sheet]]
+name = "Sales by segment"
+# Same design as "Sales by Category", one panel per Segment.
+title = "Sales by segment"
+visual = ["stackedAreaChart"]
+roles.Category = ["Order Date:month"]
+roles.Y = ["Sales:sum"]
+roles.Rows = ["Segment"]
+roles.Series = ["Order Profitable?"]
+roles.Tooltips = ["Profit:sum"]
+known_gaps."visual-type" = "Tableau stacks area marks; the mapper always emits areaChart"
+known_gaps."Category[Order Date:month]" = "date parts on shelves (tmn:) are ignored, so the axis is daily"
+known_gaps."Category:no-extras" = "date parts on shelves (tmn:) are ignored: plain Order Date is bound"
+known_gaps."Series[Order Profitable?]" = "dimension calculations become measures, so the colour split is dropped"
+known_gaps."Tooltips[Profit:sum]" = "tooltip encodings are not migrated"
+
+[[sheet]]
+name = "Tooltip: Profit Ratio by City"
+kind = "tooltip"
+# Shown only inside the map's tooltip (<Sheet name="Tooltip: Profit Ratio by City"> in the map's
+# tooltip text; visible in the dashboard screenshot): horizontal bars of profit ratio by City.
+# Power BI equivalent: a hidden report-page tooltip.
+title = "Profit Ratio by City"
+visual = ["clusteredBarChart"]
+roles.Category = ["City"]
+roles.Y = ["profit ratio:measure"]
+known_gaps."title" = "custom worksheet titles are not migrated (the sheet name is used)"
+known_gaps."tooltip-page" = "viz-in-tooltip sheets become ordinary pages"
+known_gaps."hidden" = "viz-in-tooltip sheets become ordinary pages"
+notes = [
+    "Not checked: bars are coloured by profit ratio (a gradient: conditional formatting, not a role).",
+    "Not checked: cities are sorted ascending by profit ratio (sort direction: BACKLOG).",
+    "Not checked: value labels on the bars.",
+    "Not checked: the map visual should use this page as its tooltip.",
+]
+
+[[sheet]]
+name = "profit ratio by geography"
+# A filled map of US and Canadian states coloured by profit ratio (orange-blue diverging),
+# Country/Region and State/Province as location; nothing on Size.
+title = "profit ratio by geography"
+visual = ["azureMap"]
+roles.Category = ["Country/Region", "State/Province"]
+roles.Size = []
+known_gaps."Size:no-extras" = "the map rule puts the colour measure in Size (bubbles) instead of colouring the shapes"
+notes = [
+    "Not checked: colour by profit ratio. Azure Map colours by a measure through formatting, not a field role.",
+]
+
+[[sheet]]
+name = "Executive Overview"
+kind = "dashboard"
+# KPI table on top, map, then Sales by segment and Sales by Category side by side; on the right
+# the Country/Region and Order Date filters, a profit-ratio range filter and colour legends.
+contains = [
+    "Key Performance Indicators",
+    "profit ratio by geography",
+    "Sales by segment",
+    "Sales by Category",
+]
+slicers = ["Country/Region", "Order Date"]
+notes = [
+    "Not checked: the profit-ratio filter card (a measure filter: a visual-level filter in Power BI, not a slicer).",
+    "Not checked: Order Date is a range filter, so its slicer should be a between-style slicer.",
+    "Not checked: the colour legends (profit ratio, Order Profitable?).",
+]

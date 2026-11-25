@@ -543,6 +543,8 @@ html { scroll-behavior: smooth; }
         <tr><td>validate/</td><td><code>model_validate</code> (tables, partitions, relationship columns), <code>dax</code> (brackets, references), <code>pbir_cli</code> (external validator).</td></tr>
         <tr><td>emit/</td><td><code>tmdl_writer</code>, <code>pbir_writer</code>, <code>pbip_assembler</code> (folder layout, base theme).</td></tr>
         <tr><td>llm/client.py</td><td>Builds <code>AzureChatOpenAI</code>, or returns None.</td></tr>
+        <tr><td>toolchain.py</td><td>Finds Microsoft's pinned tools (<code>tools/package.json</code>) before anything on PATH.</td></tr>
+        <tr><td>fidelity/</td><td>Scores the emitted project against <code>samples/expected/*.toml</code>: structural checks (pages, visual types, field bindings) read from the files; known gaps listed per check.</td></tr>
       </tbody>
     </table>
   </div>
@@ -578,13 +580,20 @@ t2pbi migrate x.twb --out out --report out\report.json
 .\.venv\Scripts\python.exe -m ruff check src tests scripts
 
 # refresh the visual catalog
-python scripts\refresh_visual_catalog.py</pre>
+python scripts\refresh_visual_catalog.py
+
+# fidelity score of the samples
+python scripts\fidelity.py
+
+# output unchanged? (run on both revisions)
+python scripts\snapshot_outputs.py snap a.json
+python scripts\snapshot_outputs.py compare a.json b.json</pre>
     </div>
   </div>
 </section>
 
 <footer>
-  Checked against <span class="mono">main</span> after the dead-code sweep, 25 Nov 2026. If the code has moved since, trust the code, and update this map.
+  Checked against <span class="mono">main</span> after fidelity step 1a, 25 Nov 2026. If the code has moved since, trust the code, and update this map.
 </footer>
 
 </div>
