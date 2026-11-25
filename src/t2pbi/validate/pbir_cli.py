@@ -2,19 +2,20 @@
 
 This is the deterministic correctness check for a migrated report — it catches invalid roles,
 schema violations, and layout problems before a developer ever opens the file. The CLI is an
-optional external dependency (npm ``@microsoft/powerbi-report-authoring-cli``); when it is not on
-PATH, validation is skipped rather than failing the migration.
+optional external dependency (npm ``@microsoft/powerbi-report-authoring-cli``, pinned in
+``tools/package.json``); when it is not installed, validation is skipped rather than failing the
+migration.
 """
 
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
 from t2pbi.mapping.report import IssueSeverity
+from t2pbi.toolchain import command, find_node_tool
 
 _CLI = "powerbi-report-author"
 # The offline schema fetch failing is an environment artifact, not a defect in the file.
@@ -29,15 +30,11 @@ def run_report_author(*cli_args: str, timeout: float = 120.0) -> dict | None:
     payload.
     """
 
-    exe = shutil.which(_CLI)
+    exe = find_node_tool(_CLI)
     if exe is None:
         return None
 
-    args = [exe, *cli_args]
-    # Windows npm shims are .cmd/.bat and must run through the command interpreter.
-    if exe.lower().endswith((".cmd", ".bat")):
-        args = ["cmd", "/c", *args]
-
+    args = command(exe, *cli_args)
     try:
         # check=False: a validation failure is a non-zero exit but still prints the diagnostics.
         proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)

@@ -9,6 +9,54 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-25 — Step 0: pinned toolchain, and what the Power BI tools can really do
+
+**Decisions taken while planning the roadmap.** LLM: Azure OpenAI through the existing client
+(a tool-calling, vision-capable deployment, configured by the operator). Corpus: Book1 only for
+now. CI: GitHub Actions. The refinement agent edits **PBIR/TMDL files directly**; after refinement
+the files, not the IR, are the source of truth.
+
+**Toolchain pinned.** `tools/package.json` pins `powerbi-report-authoring-cli` 0.5.0 (was 0.1.4 on
+PATH), `powerbi-desktop-bridge-cli` 1.1.0 and `powerbi-modeling-mcp` 1.0.1; `npm ci` in `tools/`.
+`t2pbi/toolchain.py` prefers the pinned copy over PATH. Under 0.5.0 all three samples still
+validate with 0 errors and 0 warnings; the refreshed visual catalog changed a few roles
+(`cardVisual` gained `TrendVisualCategory`, slicers lost their one-field cap,
+`hundredPercentStackedBarChart` no longer requires `Category`) and migration output was
+byte-identical before and after (`scripts/snapshot_outputs.py`, now in the repo).
+
+**Spikes, run against Book1 in Power BI Desktop 2.160 (Store):**
+- *Rendering works unattended, once the machine is set up.* Two one-time prerequisites: the Store
+  app isn't found by the Bridge CLI, so `PBI_DESKTOP_PATH` must point at `PBIDesktop.exe` inside
+  the Store package folder (the `WindowsApps` alias is a reparse point the CLI rejects), and
+  Desktop must have been signed in once — until then a sign-in dialog blocks the bridge with
+  "Host is not ready to accept operations". Short (8.3) paths such as `ANDREA~1.GIO` also failed
+  to open; use long paths.
+- *Data loads without a click.* A freshly migrated PBIP opens with an empty model ("Some of the
+  tables have incomplete or no data"). The Authoring MCP server's `model_operations
+  RefreshWithXMLA` (read-write mode) against Desktop's local engine refreshes it: 10,194 Orders
+  rows, Sales by Category matching. The data survives a Bridge reload from disk, so editing report
+  files and re-screenshotting is cheap. (Microsoft's external-tools page says processing commands
+  aren't supported in Desktop; through this server it worked.)
+- *DAX can be validated by the real engine, with or without data.* `dax_query_operations
+  Validate` caught both a syntax error and an unknown column — far stronger than our bracket
+  check in `validate/dax.py`.
+- *The MCP server edits a PBIP folder offline*: `ConnectFolder` → `measure_operations Update` →
+  `database_operations ExportToTmdlFolder`, and the result loads in TOM. But it re-serializes
+  every file in Microsoft's style (CRLF, measures before columns, unquoted `sourceColumn`, deeper
+  M indentation), so the first agent edit would diff the whole model. Normalize the baseline
+  through the same serializer before the first commit, or make our writer emit that style.
+- *Python drives it from LangGraph*: `langchain-mcp-adapters` loads the 21 tools as LangChain
+  tools; calls must share one session, because the server keeps its connection per session.
+- *EULA.* The server refuses every call until its EULA is accepted, and its own tool description
+  forbids an agent from accepting it unprompted. The user accepted it per process for these
+  spikes; t2pbi will only start the server when the operator sets
+  `PBI_MODELING_MCP_ACCEPT_EULA=true`, never on its own.
+- *Embedded Tableau thumbnails are good enough to judge.* Book1's 192px images clearly show what
+  our output loses — see the new known gaps in BACKLOG (monthly vs daily dates, the missing
+  colour split).
+
+---
+
 ## 2026-11-25 — Direction: deterministic first pass, then an agentic refinement stage
 
 **Context.** The pipeline is a deterministic Tableau → Power BI schema translation with LLM help

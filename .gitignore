@@ -27,6 +27,11 @@ env/
 reference_pbip/
 *.pbip.tmp/
 
+# Pinned external tools: installed with `npm ci` in tools/, built with `dotnet publish`
+tools/node_modules/
+tools/**/bin/
+tools/**/obj/
+
 # Tableau autosave / recovery files written next to an open workbook
 ~*.twbr
 

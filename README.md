@@ -61,6 +61,12 @@ pip install -e ".[dev]"
 pytest
 ```
 
+Optional, for validation and rendering: install Microsoft's pinned Power BI tools (needs Node.js).
+
+```powershell
+cd tools; npm ci; cd ..
+```
+
 Run a migration (deterministic path, no LLM calls):
 
 ```powershell

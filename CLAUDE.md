@@ -68,10 +68,20 @@ orchestration path.
 .\.venv\Scripts\python.exe -m ruff check src tests scripts
 ```
 
-Both must pass. For refactors that should not change output, diff the generated `.pbip` against
-the previous revision rather than trusting the tests alone: run both revisions (e.g. via
-`git worktree`) over every sample and compare report pages by display name, not by folder path —
-page and visual folder names are random per run.
+Both must pass. For refactors that should not change output, don't trust the tests alone:
+snapshot the output on both revisions and compare —
+`python scripts/snapshot_outputs.py snap before.json` (old revision, e.g. via `git worktree`),
+the same with `after.json` on the new one, then `python scripts/snapshot_outputs.py compare
+before.json after.json`. It masks the random page/visual ids, so it reports only real changes.
+
+## External tools
+
+Microsoft's Power BI tools are pinned in `tools/package.json`; install them with `npm ci` in
+`tools/`. `t2pbi/toolchain.py` finds the pinned copy before anything on PATH, and every caller
+treats a missing tool as "skip this step". Running against Power BI Desktop needs, once per
+machine: Desktop signed in, and for the Store version `PBI_DESKTOP_PATH` set to `PBIDesktop.exe`
+inside the Store package folder. The Authoring MCP server only starts if the operator has accepted
+its EULA (`PBI_MODELING_MCP_ACCEPT_EULA=true`) — never accept it from code or an agent.
 
 ## Parked work
 

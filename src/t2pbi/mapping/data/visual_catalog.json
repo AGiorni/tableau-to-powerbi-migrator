@@ -154,14 +154,16 @@
       "roles": {
         "Data": "Measure",
         "Rows": "Grouping",
-        "Tooltips": "Measure"
+        "Tooltips": "Measure",
+        "TrendVisualCategory": "Grouping"
       },
       "required": [
         "Data"
       ],
       "optional": [
         "Rows",
-        "Tooltips"
+        "Tooltips",
+        "TrendVisualCategory"
       ],
       "max_per_role": {}
     },
@@ -306,9 +308,7 @@
         "Values"
       ],
       "optional": [],
-      "max_per_role": {
-        "Values": 1
-      }
+      "max_per_role": {}
     },
     "funnel": {
       "roles": {
@@ -406,10 +406,10 @@
         "Tooltips": "Measure"
       },
       "required": [
-        "Category",
         "Y"
       ],
       "optional": [
+        "Category",
         "Series",
         "Rows",
         "Tooltips"
@@ -560,9 +560,7 @@
       "optional": [
         "Tooltips"
       ],
-      "max_per_role": {
-        "Values": 1
-      }
+      "max_per_role": {}
     },
     "map": {
       "roles": {
@@ -800,9 +798,7 @@
         "Values"
       ],
       "optional": [],
-      "max_per_role": {
-        "Values": 1
-      }
+      "max_per_role": {}
     },
     "stackedAreaChart": {
       "roles": {

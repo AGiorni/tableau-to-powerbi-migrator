@@ -1,0 +1,10 @@
+{
+  "name": "t2pbi-tools",
+  "private": true,
+  "description": "Pinned Microsoft Power BI tooling used by t2pbi for validation, rendering and model access. Install with `npm ci` in this folder.",
+  "dependencies": {
+    "@microsoft/powerbi-desktop-bridge-cli": "1.1.0",
+    "@microsoft/powerbi-modeling-mcp": "1.0.1",
+    "@microsoft/powerbi-report-authoring-cli": "0.5.0"
+  }
+}

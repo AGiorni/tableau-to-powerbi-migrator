@@ -9,9 +9,14 @@ decision worth remembering.
 
 ## Roadmap: agentic refinement (decided 2026-11-25)
 
-Deterministic first pass, then an agentic refinement stage; see the DEVLOG entry of 2026-11-25.
-In order:
+Deterministic first pass, then an agentic refinement stage; see the DEVLOG entries of 2026-11-25.
+Decided for this roadmap: Azure OpenAI as the LLM, Book1 as the only data-backed workbook for
+now, GitHub Actions for CI, and an agent that edits PBIR/TMDL files directly. In order:
 
+0. [x] **Pinned toolchain and feasibility spikes** *(done 2026-11-25)*. All four spikes passed:
+   unattended rendering (after one-time machine setup), data refresh through the Authoring MCP
+   server, DAX validation by the engine, and Python/LangGraph driving the server. Details in
+   DEVLOG.
 1. [ ] **Fidelity harness.** For each sample: Tableau visuals (embedded thumbnails, or exports
    when available) and data, the Power BI output rendered through the Desktop Bridge (page PNGs)
    and queried with DAX through the Authoring MCP server, and a fidelity score. Comes first:
@@ -28,10 +33,32 @@ In order:
    commit per change; bounded by a budget.
 
 Supporting work, to be designed with step 4: a structured `diagnostics` field in the state (the
-agent's work list, separate from the report's `issues`) and a staging folder with a final
-publish step, so a failed run never leaves a half-broken project in `out/`.
+agent's work list, separate from the report's `issues`); the output project as a git repository
+(baseline commit, one commit per accepted change), so a failed run never leaves a half-broken
+project; and a baseline normalized through Microsoft's TMDL serializer, so the first model edit
+doesn't diff every file.
+
+- [ ] **Use the engine's DAX validation in the repair loop.** When the Authoring MCP server and a
+  Desktop instance are available, `dax_query_operations Validate` catches unknown columns and
+  real syntax errors that `validate/dax.py`'s bracket check misses; feed its message back to the
+  LLM on the `repair` route, keeping the bracket check as the offline fallback.
+- [ ] **Grow the test corpus beyond Book1.** Only Book1 has real data; the other samples are
+  synthetic. More data-backed workbooks are what turn the fidelity harness from a smoke test into
+  a measure.
 
 ## Known gaps in Tableau migration
+
+- [ ] **Date parts on shelves are ignored, so time axes plot by day.** *(verified 2026-11-25)*
+  Tableau's `tmn:` (truncated month), `yr:`, `qr:` and similar prefixes reach `_resolve_field` in
+  [visual_mapper.py](src/t2pbi/mapping/visual_mapper.py) as an aggregation code that
+  `_AGG_FUNCTION` doesn't know, so the date becomes a plain column. Book1's "Sales by Category" is
+  monthly in Tableau and a flat daily line in Power BI (seen in the step-0 screenshots).
+
+- [ ] **Dimension-role calculated fields become measures, so colour splits are dropped.**
+  *(verified 2026-11-25)* Every calc maps to a measure in
+  [model_mapper.py](src/t2pbi/mapping/model_mapper.py); Book1's "Order Profitable?" (a dimension,
+  on the colour shelf) can't go in a `Series` role, so `enforce_wells` drops it and the chart loses
+  its two-colour split.
 
 - [ ] **Parameters are parsed but never migrated.** *(verified 2026-11-24)*
   [tableau_parser.py](src/t2pbi/parse/tableau_parser.py) fills `TableauWorkbook.parameters` —
