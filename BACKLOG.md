@@ -7,6 +7,30 @@ Items marked **(verified)** were confirmed against the code at the date shown; t
 judgement calls. Remove an item when it ships, and add a DEVLOG entry if closing it involved a
 decision worth remembering.
 
+## Roadmap: agentic refinement (decided 2026-11-25)
+
+Deterministic first pass, then an agentic refinement stage; see the DEVLOG entry of 2026-11-25.
+In order:
+
+1. [ ] **Fidelity harness.** For each sample: Tableau visuals (embedded thumbnails, or exports
+   when available) and data, the Power BI output rendered through the Desktop Bridge (page PNGs)
+   and queried with DAX through the Authoring MCP server, and a fidelity score. Comes first:
+   without a measurement we can't tell whether the agent helps.
+2. [ ] **`validate_tmdl` node.** A small .NET tool in the repo (`tools/`) that loads the written
+   TMDL with TOM's `TmdlSerializer` and prints JSON diagnostics; a report-only graph node after
+   `assemble`, skipped with an INFO issue when .NET is unavailable, mirroring `validate_pbir`.
+3. [ ] **Run both validators over every sample in the tests**, so writer bugs fail CI instead
+   of reaching users.
+4. [ ] **Agentic refinement subgraph.** A tool-using agent inside the graph that works through
+   report issues and fidelity gaps on the baseline `.pbip`. Tools: edit PBIR/TMDL files, the
+   Authoring MCP server, `powerbi-report-author validate`, Desktop Bridge reload and screenshot,
+   Tableau thumbnails. Keeps a change only if it validates and fidelity doesn't drop; one git
+   commit per change; bounded by a budget.
+
+Supporting work, to be designed with step 4: a structured `diagnostics` field in the state (the
+agent's work list, separate from the report's `issues`) and a staging folder with a final
+publish step, so a failed run never leaves a half-broken project in `out/`.
+
 ## Known gaps in Tableau migration
 
 - [ ] **Parameters are parsed but never migrated.** *(verified 2026-11-24)*
@@ -36,6 +60,16 @@ decision worth remembering.
   the format on the `<column>` element (`default-format`); it needs reading and translating to
   a .NET format string.
 
+- [ ] **Table-name duplicates are checked case-sensitively.** *(verified 2026-11-25)*
+  `_check_duplicate_tables` in [model_validate.py](src/t2pbi/validate/model_validate.py)
+  compares names exactly, but Power BI object names are case-insensitive (to our knowledge) and so
+  are Windows file names: `Orders` and `orders` pass the check, then overwrite each other's
+  `tables/<name>.tmdl` without any warning.
+
+- [ ] **`validate_pbir` reports under the stage name `preflight`, but it runs after the
+  build.** *(verified 2026-11-25)* The name is left over from earlier code. Renaming it changes
+  report output, so bundle it with the "should validation stop the run?" decision.
+
 ## Decisions needed
 
 - [ ] **Should validation errors stop the run?** *(verified 2026-11-25)* Today `validate_model`
@@ -50,6 +84,8 @@ decision worth remembering.
   `LLMVisualRouter`, but nothing reads them: the "Review recommended" INFO issue in
   [visual_mapper.py](src/t2pbi/mapping/visual_mapper.py) says only who decided. Recommended:
   put both in that issue's `detail`, so a reviewer can triage low-confidence visuals first.
+  With the agentic stage on the roadmap, low confidence is also a natural entry for the agent's
+  work list.
 
 ## Open questions
 
@@ -63,6 +99,12 @@ decision worth remembering.
   into a number.
 
 ## Parked
+
+- **Turning recurring agent fixes into reusable rules** — at run time (approved fixes retrieved as
+  examples, or declarative rules the deterministic pass reads) or as code through CI/CD.
+  Discussed 2026-11-25 and deferred as too complex for now. If it is picked up, the first piece
+  is a structured record of every change the agent makes, since every tier is built from those
+  records.
 
 - **Source-pluggable refactor (Spotfire support)** — branch `refactor/source-pluggable`, pushed,
   not merged. Splits the code at a tool-neutral source IR, renames the package `t2pbi` → `x2pbi`,

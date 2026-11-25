@@ -9,6 +9,71 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-25 — Direction: deterministic first pass, then an agentic refinement stage
+
+**Context.** The pipeline is a deterministic Tableau → Power BI schema translation with LLM help
+at two points (DAX translation, unmatched visuals). Every check we have measures *validity* —
+does the project open, are the files well-formed — and nothing measures *fidelity*: does the
+Power BI report show and mean what the Tableau one did. The long tail of Tableau features
+(table calcs, sets, dual axes, actions, formatting) is where migrations fail, and more
+deterministic rules alone won't cover it.
+
+**Options considered.**
+- *A — keep the deterministic pass and add an agentic refinement stage* that takes the baseline
+  `.pbip`, the IR and the migration report, edits the project files with tools, and checks its
+  work against validators, the Power BI engine and the original Tableau visuals.
+- *B — rebuild as a fully agentic system* where each node is an agent that builds its component,
+  reads documentation, validates and repairs itself, keeping a memory of learnings.
+
+**Decision: A.** Parsing workbook XML and writing TMDL/PBIR have exact answers; an LLM does that
+worse, slower and at higher cost than code, and would rediscover the format constraints in the
+reference table below on every run. A migration product also has to be reproducible (same
+workbook → same output) to be regression-tested, audited and costed. The agent's effort goes
+where the input is genuinely ambiguous and where fidelity has to be judged.
+
+**Shape of the agentic stage** (not built yet):
+- A *subgraph* inside the existing LangGraph graph, after the deterministic pass — not a second
+  system, so the graph stays the only runner.
+- Validators become the agent's *tools*: every edit is followed by validation.
+- It can only improve on the baseline: a change is kept only if it validates and fidelity
+  doesn't drop, with each change committed to git so it can be rolled back. Same principle as
+  `LLMVisualRouter` ("can only improve on the guess").
+- Its work list is bounded: report issues plus fidelity gaps, under a budget, with a person
+  approving semantic choices.
+- This supersedes the idea of a graph-level `repair_ir` loop after the post-build validators;
+  repair after writing becomes the agent's job.
+
+**Tooling, checked against Microsoft Learn on 2026-11-25:**
+- *Power BI Authoring MCP server* (local version generally available): edits semantic models in
+  PBIP/TMDL folders on disk or in Desktop, and runs DAX queries — real DAX validation against the
+  engine. It cannot edit report pages.
+- *Power BI Desktop Bridge* and its `powerbi-desktop` CLI: open a PBIP in a running Desktop,
+  reload after on-disk edits, capture each page as a PNG. Windows only, local named pipe, one
+  operation at a time per Desktop window.
+- *`powerbi-report-author`*: PBIR validation (already used). It ignores the semantic model
+  entirely — tested by deleting the whole `SemanticModel` folder, which still validated.
+- *TOM `TmdlSerializer`* (NuGet `Microsoft.AnalysisServices`): a throwaway spike loaded all three
+  samples cleanly and caught 9 of 13 deliberate defects (indentation, unknown keywords, invalid
+  enum and data-type values, unquoted names, duplicate columns, relationships to missing
+  columns or tables, a deleted table file). It does not check DAX or M text, or a measure named like a column. Gotcha: the
+  `dotnet` CLI hung on a background workload-update check after each build until
+  `DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1` was set.
+- *Report export to PDF/PNG via REST* needs Fabric/Premium capacity; Desktop Bridge screenshots
+  cover local use.
+- Tableau workbooks can embed sheet thumbnails: `Book1.twb` has 6, up to 192px — enough for a
+  coarse chart-type and layout check.
+
+**Constraints to design for.** Rendering needs the data (Desktop must refresh the model, so it
+needs source access and credentials). Screenshot comparison is a weak signal; comparing numbers
+(DAX query versus Tableau data) is stronger. Screenshots and query results carry customer data
+to the model, so the LLM endpoint's data boundary is a decision, not a default.
+
+**Deferred.** Turning recurring agent fixes into reusable rules — at run time (retrieved
+examples, declarative rules) or as code via CI/CD — was discussed and left for later as too
+complex for now.
+
+---
+
 ## 2026-11-25 — Dead-code sweep after the graph refactor
 
 A review of `main` (vulture plus reading every module) for code nothing reaches and logic written

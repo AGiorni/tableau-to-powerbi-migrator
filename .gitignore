@@ -27,5 +27,8 @@ env/
 reference_pbip/
 *.pbip.tmp/
 
+# Tableau autosave / recovery files written next to an open workbook
+~*.twbr
+
 # Editor
 .vscode/
