@@ -42,6 +42,7 @@ def test_graph_shape():
         "map_visuals",
         "validate_model",
         "assemble",
+        "validate_tmdl",
         "validate_pbir",
         "__end__",
     }
@@ -52,12 +53,13 @@ def test_graph_shape():
     assert ("map_model", "map_visuals", "nothing_to_translate", True) in edges
     assert ("validate_expressions", "translate_expressions", "repair", True) in edges
     assert ("validate_expressions", "map_visuals", "done", True) in edges
-    assert ("assemble", "validate_pbir", "validate", True) in edges
+    assert ("assemble", "validate_tmdl", "validate", True) in edges
     assert ("assemble", "__end__", "skip", True) in edges
+    assert ("validate_tmdl", "validate_pbir", None, False) in edges
 
 
 def test_no_llm_path(superstore_twb, tmp_path):
-    visited, _ = _run(superstore_twb, tmp_path, MigrationContext(run_pbir_validation=False))
+    visited, _ = _run(superstore_twb, tmp_path, MigrationContext(run_output_validation=False))
     assert visited == [
         "ingest",
         "map_model",
@@ -72,7 +74,7 @@ def test_repair_loop_fixes_unbalanced_dax(superstore_twb, tmp_path, fake_chat):
     # First pass: the first field gets broken DAX, the second valid. The repair pass fixes the first.
     chat = fake_chat([_BROKEN, _VALID])
     visited, state = _run(
-        superstore_twb, tmp_path, MigrationContext(chat_model=chat, run_pbir_validation=False)
+        superstore_twb, tmp_path, MigrationContext(chat_model=chat, run_output_validation=False)
     )
 
     assert visited[2:6] == [
@@ -93,7 +95,7 @@ def test_repair_loop_fixes_unbalanced_dax(superstore_twb, tmp_path, fake_chat):
 
 def test_attempt_budget_ends_loop_with_errors(superstore_twb, tmp_path, fake_chat):
     chat = fake_chat(_BROKEN)  # always unbalanced
-    context = MigrationContext(chat_model=chat, run_pbir_validation=False, max_translation_attempts=3)
+    context = MigrationContext(chat_model=chat, run_output_validation=False, max_translation_attempts=3)
 
     visited, state = _run(superstore_twb, tmp_path, context)
 
@@ -106,14 +108,39 @@ def test_attempt_budget_ends_loop_with_errors(superstore_twb, tmp_path, fake_cha
     assert all("Could not produce valid DAX" in i.message for i in errors)
 
 
-def test_pbir_validation_runs_when_enabled(superstore_twb, tmp_path, monkeypatch):
-    payload = {"result": "succeeded", "errorCount": 0, "warningCount": 0, "diagnostics": {}}
-    monkeypatch.setattr(nodes, "run_pbir_validation", lambda _path: payload)
+def test_output_validation_runs_both_validators_when_enabled(superstore_twb, tmp_path, monkeypatch):
+    pbir = {"result": "succeeded", "errorCount": 0, "warningCount": 0, "diagnostics": {}}
+    tmdl = {
+        "result": "failed",
+        "diagnostics": [
+            {"severity": "error", "kind": "format", "file": "./tables/T", "line": 4,
+             "message": "TMDL Format Error:\r\n\tInvalid indentation was detected!"}
+        ],
+    }
+    seen_paths = []
+    monkeypatch.setattr(nodes, "run_pbir_validation", lambda _path: pbir)
+    monkeypatch.setattr(nodes.tmdl_cli, "run_tmdl_validation", lambda path: seen_paths.append(path) or tmdl)
 
-    visited, state = _run(superstore_twb, tmp_path, MigrationContext(run_pbir_validation=True))
+    visited, state = _run(superstore_twb, tmp_path, MigrationContext(run_output_validation=True))
 
-    assert visited[-1] == "validate_pbir"
-    assert any(i.stage == "preflight" and "succeeded" in i.message for i in state.issues)
+    assert visited[-2:] == ["validate_tmdl", "validate_pbir"]
+    assert seen_paths == [tmp_path / "superstore.SemanticModel" / "definition"]
+    assert any(i.stage == "pbir" and "succeeded" in i.message for i in state.issues)
+    tmdl_errors = [i for i in state.issues if i.stage == "tmdl" and i.severity is IssueSeverity.ERROR]
+    assert [(i.object_name, i.message) for i in tmdl_errors] == [
+        ("./tables/T:4", "TMDL format error: TMDL Format Error: Invalid indentation was detected!")
+    ]
+
+
+def test_output_validators_are_skipped_not_failed_when_tools_are_missing(superstore_twb, tmp_path, monkeypatch):
+    monkeypatch.setattr(nodes, "run_pbir_validation", lambda _path: None)
+    monkeypatch.setattr(nodes.tmdl_cli, "run_tmdl_validation", lambda _path: None)
+
+    _, state = _run(superstore_twb, tmp_path, MigrationContext(run_output_validation=True))
+
+    validator_issues = [i for i in state.issues if i.stage in ("tmdl", "pbir")]
+    assert {i.stage for i in validator_issues if "skipped" in i.message} == {"tmdl", "pbir"}
+    assert all(i.severity is IssueSeverity.INFO for i in validator_issues)
 
 
 def test_route_expressions():

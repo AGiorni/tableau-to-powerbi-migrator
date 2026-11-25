@@ -62,7 +62,8 @@ class MigrationContext:
 
     # LangChain chat model; None runs the deterministic path (no translation, no LLM router).
     chat_model: Any | None = None
-    # Run the external powerbi-report-author validator over the emitted project.
-    run_pbir_validation: bool = True
+    # Run the external validators over the written project: TMDL (TOM) and PBIR
+    # (powerbi-report-author). Each is skipped on its own when its tool isn't installed.
+    run_output_validation: bool = True
     # Translate passes per calculated field: the first attempt plus repairs.
     max_translation_attempts: int = 2

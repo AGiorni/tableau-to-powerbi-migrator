@@ -33,9 +33,10 @@ now, GitHub Actions for CI, and an agent that edits PBIR/TMDL files directly. In
      named after it — `samples/reference/<workbook>/`, later a `t2pbi migrate
      --reference-images <folder>` option), falling back to the workbook's embedded 192px
      thumbnails when none are given. Same mechanism for the yardstick and for the app.
-2. [ ] **`validate_tmdl` node.** A small .NET tool in the repo (`tools/`) that loads the written
-   TMDL with TOM's `TmdlSerializer` and prints JSON diagnostics; a report-only graph node after
-   `assemble`, skipped with an INFO issue when .NET is unavailable, mirroring `validate_pbir`.
+2. [x] **`validate_tmdl` node** *(done 2026-11-25)*. `tools/tmdl-validate` (.NET 8, TOM
+   `TmdlSerializer`) prints JSON diagnostics; `validate/tmdl_cli.py` wraps it; the graph runs
+   `assemble → validate_tmdl → validate_pbir`, each skipped with an INFO issue when its tool is
+   missing. All three samples load cleanly.
 3. [ ] **Run both validators over every sample in the tests**, so writer bugs fail CI instead
    of reaching users.
 4. [ ] **Agentic refinement subgraph.** A tool-using agent inside the graph that works through
@@ -135,14 +136,10 @@ doesn't diff every file.
   are Windows file names: `Orders` and `orders` pass the check, then overwrite each other's
   `tables/<name>.tmdl` without any warning.
 
-- [ ] **`validate_pbir` reports under the stage name `preflight`, but it runs after the
-  build.** *(verified 2026-11-25)* The name is left over from earlier code. Renaming it changes
-  report output, so bundle it with the "should validation stop the run?" decision.
-
 ## Decisions needed
 
-- [ ] **Should validation errors stop the run?** *(verified 2026-11-25)* Today `validate_model`
-  and `validate_pbir` only report: the `.pbip` is always written and the CLI always exits 0, so
+- [ ] **Should validation errors stop the run?** *(verified 2026-11-25)* Today `validate_model`,
+  `validate_tmdl` and `validate_pbir` only report: the `.pbip` is always written and the CLI always exits 0, so
   a script can't tell a clean run from a broken one. Options: a non-zero exit code when
   `MigrationReport.has_errors` (kept for this; currently unused), or a router after
   `validate_model` that skips `assemble`, or both. Choosing is a behaviour change, not a

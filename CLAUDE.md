@@ -77,8 +77,12 @@ before.json after.json`. It masks the random page/visual ids, so it reports only
 ## External tools
 
 Microsoft's Power BI tools are pinned in `tools/package.json`; install them with `npm ci` in
-`tools/`. `t2pbi/toolchain.py` finds the pinned copy before anything on PATH, and every caller
-treats a missing tool as "skip this step". Running against Power BI Desktop needs, once per
+`tools/`. The TMDL validator is a small .NET 8 project:
+`dotnet publish tools/tmdl-validate -c Release -o tools/tmdl-validate/bin/publish` (set
+`DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1` first, or the `dotnet` CLI can hang after the build
+on a background workload check). `t2pbi/toolchain.py` finds the pinned copies before anything on
+PATH, and every caller treats a missing tool as "skip this step"; tests that need a tool are
+skipped without it. Running against Power BI Desktop needs, once per
 machine: Desktop signed in, and for the Store version `PBI_DESKTOP_PATH` set to `PBIDesktop.exe`
 inside the Store package folder. The Authoring MCP server only starts if the operator has accepted
 its EULA (`PBI_MODELING_MCP_ACCEPT_EULA=true`) — never accept it from code or an agent.

@@ -21,7 +21,7 @@ from t2pbi.mapping import expression_translator, model_mapper, visual_mapper
 from t2pbi.mapping.report import IssueSeverity, MigrationReport
 from t2pbi.mapping.visual_router_llm import LLMVisualRouter
 from t2pbi.parse import parse_workbook
-from t2pbi.validate import model_validate
+from t2pbi.validate import model_validate, tmdl_cli
 from t2pbi.validate.pbir_cli import iter_findings, run_pbir_validation
 
 # --------------------------------------------------------------------------------------------
@@ -183,6 +183,36 @@ def assemble(state: MigrationState) -> dict:
     return {"pbip_path": str(path)}
 
 
+def validate_tmdl(state: MigrationState) -> dict:
+    """Load the written semantic model with Microsoft's TMDL serializer (TOM) and report problems.
+
+    Catches writer bugs ``validate_model`` can't see, because that one checks the IR before writing.
+    """
+
+    assert state.pbip_path is not None
+    report = MigrationReport()
+    result = tmdl_cli.run_tmdl_validation(tmdl_cli.definition_dir(state.pbip_path))
+    if result is None:
+        report.add(
+            IssueSeverity.INFO,
+            "tmdl",
+            "validator",
+            "tmdl-validate not available (build tools/tmdl-validate; needs .NET); skipped TMDL validation.",
+        )
+        return {"issues": report.issues}
+
+    findings = list(tmdl_cli.iter_findings(result))
+    for severity, where, message in findings:
+        report.add(severity, "tmdl", where, message)
+    report.add(
+        IssueSeverity.INFO,
+        "tmdl",
+        "validator",
+        f"TMDL validation: {result.get('result', 'unknown')} ({len(findings)} error(s)).",
+    )
+    return {"issues": report.issues}
+
+
 def validate_pbir(state: MigrationState) -> dict:
     """Run the external powerbi-report-author validator and fold its diagnostics into issues."""
 
@@ -192,18 +222,18 @@ def validate_pbir(state: MigrationState) -> dict:
     if result is None:
         report.add(
             IssueSeverity.INFO,
-            "preflight",
+            "pbir",
             "validator",
-            "powerbi-report-author not available; skipped PBIR validation gate.",
+            "powerbi-report-author not available (npm ci in tools/); skipped PBIR validation.",
         )
         return {"issues": report.issues}
 
     for severity, code, message in iter_findings(result):
-        report.add(severity, "preflight", code, message)
+        report.add(severity, "pbir", code, message)
 
     report.add(
         IssueSeverity.INFO,
-        "preflight",
+        "pbir",
         "validator",
         f"PBIR validation: {result.get('result', 'unknown')} "
         f"({result.get('errorCount', 0)} error(s), {result.get('warningCount', 0)} warning(s)).",
@@ -217,7 +247,7 @@ def validate_pbir(state: MigrationState) -> dict:
 
 ExpressionRoute = Literal["translate", "no_llm", "nothing_to_translate"]
 RepairRoute = Literal["repair", "done"]
-PbirRoute = Literal["validate", "skip"]
+OutputValidationRoute = Literal["validate", "skip"]
 
 
 def route_expressions(
@@ -237,7 +267,9 @@ def route_after_expression_validation(state: MigrationState) -> RepairRoute:
     return "repair" if state.pending_expressions else "done"
 
 
-def route_pbir_validation(state: MigrationState, runtime: Runtime[MigrationContext]) -> PbirRoute:
-    """After assembly: run the external PBIR validator unless the run disabled it."""
+def route_output_validation(
+    state: MigrationState, runtime: Runtime[MigrationContext]
+) -> OutputValidationRoute:
+    """After assembly: run the external validators (TMDL, then PBIR) unless the run disabled them."""
 
-    return "validate" if runtime.context.run_pbir_validation else "skip"
+    return "validate" if runtime.context.run_output_validation else "skip"

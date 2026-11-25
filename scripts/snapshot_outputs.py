@@ -74,7 +74,7 @@ def snapshot() -> dict:
     for workbook in sorted(_SAMPLES.glob("*.twb")):
         for label, make_chat in runs.items():
             out = Path(tempfile.mkdtemp())
-            context = MigrationContext(chat_model=make_chat(), run_pbir_validation=False)
+            context = MigrationContext(chat_model=make_chat(), run_output_validation=False)
             result = migrate(workbook, out, context)
             snap[f"{workbook.name}/{label}"] = _normalize(out, result.report.issues)
     return snap

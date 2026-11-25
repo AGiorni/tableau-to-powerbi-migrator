@@ -11,7 +11,7 @@
            [no_llm]               -> flag_untranslated     -> map_visuals
            [nothing_to_translate] -> map_visuals
       -> map_visuals -> validate_model -> assemble
-           [validate] -> validate_pbir -> END
+           [validate] -> validate_tmdl -> validate_pbir -> END
            [skip]     -> END
 
 New stages are new nodes; new decisions are new conditional edges. Keep loops and gates in the
@@ -58,6 +58,7 @@ def build_graph() -> MigrationGraph:
     graph.add_node("map_visuals", nodes.map_visuals)
     graph.add_node("validate_model", nodes.validate_model)
     graph.add_node("assemble", nodes.assemble)
+    graph.add_node("validate_tmdl", nodes.validate_tmdl)
     graph.add_node("validate_pbir", nodes.validate_pbir)
 
     graph.add_edge(START, "ingest")
@@ -82,9 +83,10 @@ def build_graph() -> MigrationGraph:
     graph.add_edge("validate_model", "assemble")
     graph.add_conditional_edges(
         "assemble",
-        nodes.route_pbir_validation,
-        {"validate": "validate_pbir", "skip": END},
+        nodes.route_output_validation,
+        {"validate": "validate_tmdl", "skip": END},
     )
+    graph.add_edge("validate_tmdl", "validate_pbir")
     graph.add_edge("validate_pbir", END)
 
     return graph.compile()

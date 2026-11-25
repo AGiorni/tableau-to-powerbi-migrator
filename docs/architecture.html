@@ -176,7 +176,7 @@ html { scroll-behavior: smooth; }
   </div>
   <figure>
     <div class="frame">
-      <svg class="d" viewBox="0 0 880 1000" role="img" aria-label="The CLI builds a MigrationContext and invokes the graph. ingest, then map_model. A router after map_model picks translate, no_llm or nothing_to_translate. translate_expressions calls Azure OpenAI, then validate_expressions either loops back on the repair route or continues on done to map_visuals. flag_untranslated and the nothing_to_translate route also lead to map_visuals, which may call the LLM for unmatched sheets and checks roles against the visual catalog. Then validate_model, assemble, and a router that either runs validate_pbir via the external CLI or skips to the end.">
+      <svg class="d" viewBox="0 0 880 1096" role="img" aria-label="The CLI builds a MigrationContext and invokes the graph. ingest, then map_model. A router after map_model picks translate, no_llm or nothing_to_translate. translate_expressions calls Azure OpenAI, then validate_expressions either loops back on the repair route or continues on done to map_visuals. flag_untranslated and the nothing_to_translate route also lead to map_visuals, which may call the LLM for unmatched sheets and checks roles against the visual catalog. Then validate_model, assemble, and a router that either runs validate_tmdl and validate_pbir through Microsoft's checkers or skips to the end.">
         <defs>
           <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-fg"/></marker>
           <marker id="ahm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-muted"/></marker>
@@ -190,7 +190,7 @@ html { scroll-behavior: smooth; }
         <text class="t-desc" x="252" y="58">cli.py → migrate() → graph.invoke()</text>
         <rect class="box-ext" x="620" y="16" width="244" height="64" rx="6"/>
         <text class="t-title" x="634" y="38">MigrationContext</text>
-        <text class="t-desc" x="634" y="56">chat_model · run_pbir_validation</text>
+        <text class="t-desc" x="634" y="56">chat_model · run_output_validation</text>
         <text class="t-desc" x="634" y="72">max_translation_attempts</text>
         <line class="ln" x1="524" y1="44" x2="618" y2="44" marker-end="url(#ah)"/>
         <text class="t-lab" x="571" y="38" text-anchor="middle">builds</text>
@@ -263,19 +263,25 @@ html { scroll-behavior: smooth; }
         <text class="t-desc" x="252" y="762">write TMDL + PBIR, UTF-8, no BOM</text>
         <line class="ln-route" x1="380" y1="776" x2="380" y2="830" marker-end="url(#aha)"/>
         <text class="t-route" x="390" y="807">validate</text>
-        <path class="ln-route" d="M236 760 H160 V956 H234" marker-end="url(#aha)"/>
-        <text class="t-route" x="168" y="860">skip</text>
+        <path class="ln-route" d="M236 760 H160 V1052 H234" marker-end="url(#aha)"/>
+        <text class="t-route" x="168" y="905">skip</text>
 
-        <!-- validate_pbir -->
+        <!-- validate_tmdl -->
         <rect class="box" x="236" y="832" width="288" height="56" rx="6"/>
-        <text class="t-name" x="252" y="854">validate_pbir</text>
-        <text class="t-desc" x="252" y="874">Microsoft's PBIR validator → issues</text>
+        <text class="t-name" x="252" y="854">validate_tmdl</text>
+        <text class="t-desc" x="252" y="874">Microsoft's TMDL parser (TOM) → issues</text>
         <line class="ln" x1="380" y1="888" x2="380" y2="926" marker-end="url(#ah)"/>
 
+        <!-- validate_pbir -->
+        <rect class="box" x="236" y="928" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="950">validate_pbir</text>
+        <text class="t-desc" x="252" y="970">Microsoft's PBIR validator → issues</text>
+        <line class="ln" x1="380" y1="984" x2="380" y2="1022" marker-end="url(#ah)"/>
+
         <!-- END -->
-        <rect class="box-out" x="236" y="928" width="288" height="56" rx="6"/>
-        <text class="t-name" x="252" y="950">END → MigrationResult</text>
-        <text class="t-desc" x="252" y="970">&lt;name&gt;.pbip + issues · <tspan class="t-warn">exit code always 0</tspan></text>
+        <rect class="box-out" x="236" y="1024" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="1046">END → MigrationResult</text>
+        <text class="t-desc" x="252" y="1066">&lt;name&gt;.pbip + issues · <tspan class="t-warn">exit code always 0</tspan></text>
 
         <!-- issues note -->
         <rect class="rail" x="16" y="616" width="128" height="80" rx="6"/>
@@ -299,12 +305,19 @@ html { scroll-behavior: smooth; }
         <line class="ln" x1="524" y1="572" x2="618" y2="572" marker-end="url(#ah)"/>
         <text class="t-lab" x="571" y="594" text-anchor="middle">checks</text>
 
-        <!-- powerbi-report-author -->
+        <!-- tmdl-validate -->
         <rect class="box-ext" x="620" y="832" width="244" height="56" rx="6"/>
-        <text class="t-name-s" x="634" y="854">powerbi-report-author</text>
-        <text class="t-desc" x="634" y="874">npm CLI; INFO issue if absent</text>
+        <text class="t-name-s" x="634" y="854">tools/tmdl-validate</text>
+        <text class="t-desc" x="634" y="874">.NET + TOM; INFO issue if absent</text>
         <line class="ln-ext" x1="524" y1="860" x2="618" y2="860" marker-end="url(#ahm)"/>
         <text class="t-lab" x="571" y="854" text-anchor="middle">subprocess</text>
+
+        <!-- powerbi-report-author -->
+        <rect class="box-ext" x="620" y="928" width="244" height="56" rx="6"/>
+        <text class="t-name-s" x="634" y="950">powerbi-report-author</text>
+        <text class="t-desc" x="634" y="970">npm CLI; INFO issue if absent</text>
+        <line class="ln-ext" x1="524" y1="956" x2="618" y2="956" marker-end="url(#ahm)"/>
+        <text class="t-lab" x="571" y="950" text-anchor="middle">subprocess</text>
       </svg>
     </div>
     <div class="legend" aria-hidden="true">
@@ -315,7 +328,7 @@ html { scroll-behavior: smooth; }
       <span><i class="chip out"></i>what the user gets</span>
       <span style="color:var(--warn)">red text = surprise</span>
     </div>
-    <figcaption>The topology is <span class="mono">build_graph()</span> in <span class="mono">graph/pipeline.py</span>; nodes and routers are in <span class="mono">graph/nodes.py</span>. With <span class="mono">--no-llm</span> or no <span class="mono">T2PBI_AZURE_OPENAI_ENDPOINT</span>, the <span class="mono">no_llm</span> route skips translation and <span class="mono">map_visuals</span> uses the deterministic router. The repair loop stops after <span class="mono">max_translation_attempts</span> (default 2); anything still rejected becomes an ERROR and stays <span class="mono">BLANK()</span>. A missing or malformed workbook raises in <span class="mono">ingest</span> and stops the run.</figcaption>
+    <figcaption>The topology is <span class="mono">build_graph()</span> in <span class="mono">graph/pipeline.py</span>; nodes and routers are in <span class="mono">graph/nodes.py</span>. With <span class="mono">--no-llm</span> or no <span class="mono">T2PBI_AZURE_OPENAI_ENDPOINT</span>, the <span class="mono">no_llm</span> route skips translation and <span class="mono">map_visuals</span> uses the deterministic router. The repair loop stops after <span class="mono">max_translation_attempts</span> (default 2); anything still rejected becomes an ERROR and stays <span class="mono">BLANK()</span>. After <span class="mono">assemble</span>, <span class="mono">validate_tmdl</span> and <span class="mono">validate_pbir</span> check the written files with Microsoft's own tools; each is skipped with an INFO issue when its tool isn't installed, and <span class="mono">--no-validate</span> skips both. A missing or malformed workbook raises in <span class="mono">ingest</span> and stops the run.</figcaption>
   </figure>
 </section>
 
@@ -540,7 +553,7 @@ html { scroll-behavior: smooth; }
         <tr><td>mapping/visual_router_llm.py</td><td><code>LLMVisualRouter</code>.</td></tr>
         <tr><td>mapping/visual_catalog.py</td><td>Loads <code>data/visual_catalog.json</code>; <code>enforce_wells</code>.</td></tr>
         <tr><td>mapping/report.py</td><td><code>MigrationReport</code>: severity, stage, object, message.</td></tr>
-        <tr><td>validate/</td><td><code>model_validate</code> (tables, partitions, relationship columns), <code>dax</code> (brackets, references), <code>pbir_cli</code> (external validator).</td></tr>
+        <tr><td>validate/</td><td><code>model_validate</code> (tables, partitions, relationship columns), <code>dax</code> (brackets, references), <code>tmdl_cli</code> (TOM, via <code>tools/tmdl-validate</code>), <code>pbir_cli</code> (powerbi-report-author).</td></tr>
         <tr><td>emit/</td><td><code>tmdl_writer</code>, <code>pbir_writer</code>, <code>pbip_assembler</code> (folder layout, base theme).</td></tr>
         <tr><td>llm/client.py</td><td>Builds <code>AzureChatOpenAI</code>, or returns None.</td></tr>
         <tr><td>toolchain.py</td><td>Finds Microsoft's pinned tools (<code>tools/package.json</code>) before anything on PATH.</td></tr>
@@ -582,6 +595,9 @@ t2pbi migrate x.twb --out out --report out\report.json
 # refresh the visual catalog
 python scripts\refresh_visual_catalog.py
 
+# build the TMDL validator (needs .NET)
+dotnet publish tools\tmdl-validate -c Release -o tools\tmdl-validate\bin\publish
+
 # fidelity score of the samples
 python scripts\fidelity.py
 
@@ -593,7 +609,7 @@ python scripts\snapshot_outputs.py compare a.json b.json</pre>
 </section>
 
 <footer>
-  Checked against <span class="mono">main</span> after fidelity step 1a, 25 Nov 2026. If the code has moved since, trust the code, and update this map.
+  Checked against <span class="mono">main</span> after step 2 (validate_tmdl), 25 Nov 2026. If the code has moved since, trust the code, and update this map.
 </footer>
 
 </div>

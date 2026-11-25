@@ -9,6 +9,37 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-25 — Step 2: the written model is checked by Microsoft's TMDL parser
+
+**Why.** `powerbi-report-author` validates only the report: in step 0 it still passed with the
+whole `SemanticModel` folder deleted. `validate_model` checks the in-memory IR before writing, so
+it can't see writer bugs — the multi-line measure bug found during 1a would have passed both.
+
+**What.** `tools/tmdl-validate` is a small .NET 8 console app that loads a `definition/` folder
+with TOM's `TmdlSerializer.DeserializeDatabaseFromFolder`, runs `Model.Validate()`, and prints one
+JSON object (`format` / `metadata` / `validation` errors with file and line). `validate/tmdl_cli.py`
+wraps it like `pbir_cli.py`; a new `validate_tmdl` node runs between `assemble` and
+`validate_pbir`. The context flag became `run_output_validation` (one switch for both external
+checks; `--no-validate` unchanged), and the PBIR stage name `preflight`, which wrongly suggested
+it ran before the build, became `pbir`; the new one is `tmdl`.
+
+**Design choices.**
+- *A subprocess, not pythonnet*: the pipeline stays pure Python, .NET versions can't break the
+  interpreter, and a missing tool is just an INFO "skipped" issue — the graph still completes
+  without .NET.
+- *.NET 8, not 9*: long-term support; the machine's .NET 9 SDK builds it.
+- *The launcher exe is called directly*, never through the `dotnet` CLI, which is what hung in the
+  step-0 spike. Building with `DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1` (and friends) made
+  `dotnet publish` exit normally; `toolchain.dotnet_env()` sets them for every run.
+
+**Verified.** All three samples load with no errors; a mis-indented property and a relationship to
+a missing column are reported with file and line (`tests/test_tmdl_cli.py`, skipped when the tool
+isn't built). The golden-master snapshot (validation off) is identical, so only the new and
+renamed validator issues differ. Known blind spots, unchanged from the spike: DAX and M text, and
+a measure named like a column.
+
+---
+
 ## 2026-11-25 — Fidelity step 1a: structural expectations and a ratchet
 
 **What.** `src/t2pbi/fidelity/` scores an emitted project against a hand-reviewed expectations

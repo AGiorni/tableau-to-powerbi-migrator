@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     for name in names:
         expected = load_expectations(_EXPECTED / f"{name}.toml")
         project_dir = out_root / name
-        migrate(_INPUT / expected.workbook, project_dir, MigrationContext(chat_model=chat, run_pbir_validation=False))
+        migrate(_INPUT / expected.workbook, project_dir, MigrationContext(chat_model=chat, run_output_validation=False))
         results = score_structural(expected, read_project(project_dir))
         report[name] = _summarize(results)
         regressions += sum(r.outcome in ("fail", "fixed") for r in results)

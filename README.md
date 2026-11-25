@@ -22,8 +22,9 @@ graph TD
     flag_untranslated --> map_visuals
     map_visuals --> validate_model
     validate_model --> assemble
-    assemble -.->|validate| validate_pbir
+    assemble -.->|validate| validate_tmdl
     assemble -.->|skip| END([end])
+    validate_tmdl --> validate_pbir
     validate_pbir --> END
 ```
 
@@ -45,8 +46,11 @@ Working end to end on the sample workbooks:
   multiples), Measure Names/Values sheets as tables, maps, and an LLM router for ambiguous
   sheets, all checked against Power BI's visual catalog.
 - **Dashboards → report pages** with slicers.
-- **Validation** — `powerbi-report-author validate` runs after the build; diagnostics land in
-  the migration report.
+- **Validation** — after the build, Microsoft's own checkers read the written files: TOM's TMDL
+  serializer for the model and `powerbi-report-author validate` for the report; diagnostics land
+  in the migration report.
+- **Fidelity** — `scripts/fidelity.py` scores how faithfully the samples are migrated, against
+  hand-reviewed expectations in `samples/expected/`.
 
 Open work is in [BACKLOG.md](BACKLOG.md); the reasoning behind past decisions is in
 [docs/DEVLOG.md](docs/DEVLOG.md). For a visual map of the pipeline, open
@@ -61,10 +65,12 @@ pip install -e ".[dev]"
 pytest
 ```
 
-Optional, for validation and rendering: install Microsoft's pinned Power BI tools (needs Node.js).
+Optional, for validating the written project (each check is skipped if its tool is missing):
+Microsoft's pinned Power BI tools (needs Node.js) and the TMDL validator (needs a .NET 8 or later SDK).
 
 ```powershell
 cd tools; npm ci; cd ..
+dotnet publish tools\tmdl-validate -c Release -o tools\tmdl-validate\bin\publish
 ```
 
 Run a migration (deterministic path, no LLM calls):

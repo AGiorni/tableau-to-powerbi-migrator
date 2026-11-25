@@ -33,6 +33,37 @@ def find_node_tool(name: str) -> str | None:
     return shutil.which(name)
 
 
+def find_dotnet_tool(name: str) -> list[str] | None:
+    """The argv prefix to run a .NET tool published to ``tools/<name>/bin/publish``, or None.
+
+    Prefers the native launcher (``<name>.exe`` / ``<name>``) and falls back to ``dotnet
+    <name>.dll``. Built with ``dotnet publish tools/<name> -c Release -o tools/<name>/bin/publish``.
+    """
+
+    publish = tools_dir() / name / "bin" / "publish"
+    for launcher in (publish / f"{name}.exe", publish / name):
+        if launcher.is_file():
+            return [str(launcher)]
+    dll = publish / f"{name}.dll"
+    dotnet = shutil.which("dotnet")
+    if dll.is_file() and dotnet:
+        return [dotnet, str(dll)]
+    return None
+
+
+def dotnet_env() -> dict[str, str]:
+    """Environment for running .NET tools quietly: no telemetry, no first-run or workload checks
+    (the workload-update check otherwise kept the ``dotnet`` CLI hanging after each command)."""
+
+    return {
+        **os.environ,
+        "DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE": "1",
+        "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+        "DOTNET_NOLOGO": "1",
+        "DOTNET_SKIP_FIRST_TIME_EXPERIENCE": "1",
+    }
+
+
 def command(exe: str, *args: str) -> list[str]:
     """The argv to run ``exe``; Windows npm shims (.cmd/.bat) must go through ``cmd /c``."""
 

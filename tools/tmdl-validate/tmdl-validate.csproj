@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Loads a TMDL folder with Microsoft's own serializer (TOM) and prints JSON diagnostics.
+    Build:  dotnet publish tools/tmdl-validate -c Release -o tools/tmdl-validate/bin/publish
+    Used by src/t2pbi/validate/tmdl_cli.py; output is gitignored.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>tmdl-validate</AssemblyName>
+    <RootNamespace>TmdlValidate</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AnalysisServices" Version="19.120.1" />
+  </ItemGroup>
+
+</Project>

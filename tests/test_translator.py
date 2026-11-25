@@ -29,7 +29,7 @@ def _by_formula(answers: dict[str, str]):
 
 
 def _migrate(twb, out_dir, chat):
-    return migrate(twb, out_dir, MigrationContext(chat_model=chat, run_pbir_validation=False))
+    return migrate(twb, out_dir, MigrationContext(chat_model=chat, run_output_validation=False))
 
 
 def _expression_issues(result):

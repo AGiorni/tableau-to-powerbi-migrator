@@ -14,7 +14,7 @@ _PBIP_SCHEMA_RE = re.compile(
 
 
 def test_migrate_writes_pbip(superstore_twb, tmp_path):
-    result = migrate(superstore_twb, tmp_path, MigrationContext(run_pbir_validation=False))
+    result = migrate(superstore_twb, tmp_path, MigrationContext(run_output_validation=False))
 
     pbip = tmp_path / "superstore.pbip"
     assert pbip.exists()
@@ -57,7 +57,7 @@ def test_migrate_writes_pbip(superstore_twb, tmp_path):
 
 
 def test_report_flags_untranslated(superstore_twb, tmp_path):
-    result = migrate(superstore_twb, tmp_path, MigrationContext(run_pbir_validation=False))
+    result = migrate(superstore_twb, tmp_path, MigrationContext(run_output_validation=False))
 
     # Without an LLM, both calculated fields remain untranslated; the LOD one is an error.
     messages = [i.message for i in result.report.issues if i.stage == "expression"]

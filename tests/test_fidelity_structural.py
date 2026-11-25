@@ -25,7 +25,7 @@ _EXPECTATION_FILES = sorted((_ROOT / "samples" / "expected").glob("*.toml"))
 @pytest.mark.parametrize("expectations", _EXPECTATION_FILES, ids=lambda p: p.stem)
 def test_sample_fidelity_matches_expectations(expectations, tmp_path):
     expected = load_expectations(expectations)
-    migrate(_ROOT / "samples" / "input" / expected.workbook, tmp_path, MigrationContext(run_pbir_validation=False))
+    migrate(_ROOT / "samples" / "input" / expected.workbook, tmp_path, MigrationContext(run_output_validation=False))
 
     results = score_structural(expected, read_project(tmp_path))
 

@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     migrate_cmd.add_argument(
         "--no-validate",
         action="store_true",
-        help="Skip the powerbi-report-author PBIR validation gate after assembly.",
+        help="Skip validating the written project (TMDL with TOM, PBIR with powerbi-report-author).",
     )
     migrate_cmd.add_argument(
         "--report",
@@ -42,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
 def _run_migrate(args: argparse.Namespace) -> int:
     context = MigrationContext(
         chat_model=None if args.no_llm else build_chat_model(),
-        run_pbir_validation=not args.no_validate,
+        run_output_validation=not args.no_validate,
     )
     result = migrate(args.input, args.out, context)
 
