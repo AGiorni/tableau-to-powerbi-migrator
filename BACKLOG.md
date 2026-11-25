@@ -37,8 +37,11 @@ now, GitHub Actions for CI, and an agent that edits PBIR/TMDL files directly. In
    `TmdlSerializer`) prints JSON diagnostics; `validate/tmdl_cli.py` wraps it; the graph runs
    `assemble → validate_tmdl → validate_pbir`, each skipped with an INFO issue when its tool is
    missing. All three samples load cleanly.
-3. [ ] **Run both validators over every sample in the tests**, so writer bugs fail CI instead
-   of reaching users.
+3. [x] **Run both validators over every sample in the tests, in CI** *(done 2026-11-25; first
+   CI run pending the push)*. `tests/test_output_validation.py` migrates every sample through the
+   graph with both validators on; `.github/workflows/ci.yml` installs all tools on a Windows
+   runner and runs ruff + pytest with `T2PBI_REQUIRE_TOOLS=1`, plus the fidelity score in the job
+   summary.
 4. [ ] **Agentic refinement subgraph.** A tool-using agent inside the graph that works through
    report issues and fidelity gaps on the baseline `.pbip`. Tools: edit PBIR/TMDL files, the
    Authoring MCP server, `powerbi-report-author validate`, Desktop Bridge reload and screenshot,

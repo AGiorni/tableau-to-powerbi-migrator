@@ -81,8 +81,13 @@ Microsoft's Power BI tools are pinned in `tools/package.json`; install them with
 `dotnet publish tools/tmdl-validate -c Release -o tools/tmdl-validate/bin/publish` (set
 `DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1` first, or the `dotnet` CLI can hang after the build
 on a background workload check). `t2pbi/toolchain.py` finds the pinned copies before anything on
-PATH, and every caller treats a missing tool as "skip this step"; tests that need a tool are
-skipped without it. Running against Power BI Desktop needs, once per
+PATH, and every caller treats a missing tool as "skip this step". Tests that need a tool are
+marked `@pytest.mark.external("<tool>")` and skipped without it; `T2PBI_REQUIRE_TOOLS=1` (set in
+CI) makes them fail instead.
+
+CI (`.github/workflows/ci.yml`, GitHub Actions on Windows) installs every tool and runs the
+checks above on each push to `main` and each pull request. It can't run anything that needs Power
+BI Desktop (screenshots, DAX on data); run those locally. Running against Power BI Desktop needs, once per
 machine: Desktop signed in, and for the Store version `PBI_DESKTOP_PATH` set to `PBIDesktop.exe`
 inside the Store package folder. The Authoring MCP server only starts if the operator has accepted
 its EULA (`PBI_MODELING_MCP_ACCEPT_EULA=true`) — never accept it from code or an agent.

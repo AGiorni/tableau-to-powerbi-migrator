@@ -1,0 +1,79 @@
+# Lint and test every push to main and every pull request, with all external tools installed:
+# Microsoft's pinned Power BI tools (tools/package.json) and the TMDL validator (.NET).
+# T2PBI_REQUIRE_TOOLS makes any test that needs a missing tool fail instead of skip.
+# Not covered here: anything needing Power BI Desktop (screenshots, DAX on data, the agent).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint and test (Windows, all tools)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: "1"
+      T2PBI_REQUIRE_TOOLS: "1"
+      # Without these the dotnet CLI can hang after a command on a background workload check.
+      DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install t2pbi
+        run: python -m pip install -e ".[dev]"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tools/package-lock.json
+
+      - name: Install Microsoft's pinned Power BI tools
+        working-directory: tools
+        run: npm ci
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build the TMDL validator
+        run: dotnet publish tools/tmdl-validate -c Release -o tools/tmdl-validate/bin/publish
+
+      - name: Lint
+        run: python -m ruff check src tests scripts
+
+      - name: Test
+        run: python -m pytest -q
+
+      - name: Fidelity score (job summary)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Structural fidelity'
+            echo '```'
+            python scripts/fidelity.py || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

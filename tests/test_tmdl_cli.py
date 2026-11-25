@@ -1,4 +1,7 @@
-"""TMDL validation: the wrapper's parsing (always), and the real tool (when it's built)."""
+"""TMDL validation: the wrapper's parsing (always), and the real tool catching a broken file.
+
+That every sample's model loads cleanly is checked in test_output_validation.py.
+"""
 
 from __future__ import annotations
 
@@ -9,13 +12,7 @@ import pytest
 
 from t2pbi.graph import MigrationContext, migrate
 from t2pbi.mapping.report import IssueSeverity
-from t2pbi.toolchain import find_dotnet_tool
 from t2pbi.validate.tmdl_cli import definition_dir, iter_findings, run_tmdl_validation
-
-needs_tool = pytest.mark.skipif(
-    find_dotnet_tool("tmdl-validate") is None,
-    reason="tmdl-validate not built (dotnet publish tools/tmdl-validate -c Release -o tools/tmdl-validate/bin/publish)",
-)
 
 
 def test_iter_findings_reports_location_and_one_line_messages():
@@ -41,19 +38,7 @@ def test_definition_dir_follows_the_pbip_name():
     assert definition_dir(Path("out/Book1.pbip")) == Path("out/Book1.SemanticModel/definition")
 
 
-@needs_tool
-@pytest.mark.parametrize("workbook", ["Book1.twb", "sales_sql.twb", "superstore.twb"])
-def test_every_sample_model_loads_in_tom(workbook, tmp_path):
-    samples = Path(__file__).resolve().parents[1] / "samples" / "input"
-    result = migrate(samples / workbook, tmp_path, MigrationContext(run_output_validation=False))
-
-    payload = run_tmdl_validation(definition_dir(result.pbip_path))
-
-    assert payload is not None
-    assert payload["result"] == "succeeded", payload["diagnostics"]
-
-
-@needs_tool
+@pytest.mark.external("tmdl-validate")
 def test_broken_tmdl_is_reported(superstore_twb, tmp_path):
     result = migrate(superstore_twb, tmp_path / "ok", MigrationContext(run_output_validation=False))
     broken = tmp_path / "broken"

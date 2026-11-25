@@ -9,6 +9,32 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-25 — Step 3: every sample through both validators, in CI
+
+**The gap it closes.** Tests that need an external tool skip when it's missing — right on a
+laptop, dangerous everywhere else: a machine without .NET silently stopped checking the model, and
+the PBIR validator only ever ran in a mocked graph test. A writer bug could pass the whole suite.
+
+**What.** `tests/test_output_validation.py` migrates every sample through the real graph with both
+validators on and fails on any validator error, or if either validator didn't actually run. Tool
+requirements are declared with one marker, `@pytest.mark.external("<tool>")`, handled in
+`conftest.py`: skip when missing, unless `T2PBI_REQUIRE_TOOLS=1`, which turns the skip into a
+failure. CI sets it, so a broken CI setup shows up as red, not as quietly skipped tests.
+
+**CI.** GitHub Actions on `windows-latest` (the platform t2pbi targets; TOM on Linux is
+unverified), triggered by pushes to `main`, pull requests and manual runs. It installs Python,
+the pinned npm tools (`npm ci`) and .NET 8, builds `tmdl-validate`, then runs ruff and pytest, and
+writes the fidelity table into the job summary. Free: the repository is public. Action versions
+were checked against their latest releases (checkout v7, setup-python v7, setup-node v7,
+setup-dotnet v6) and their inputs against each version's `action.yml`. Not covered, by design:
+anything needing Power BI Desktop.
+
+**Verified locally**: with tools present and required, everything runs (101 passed; the one skip
+is the live Azure test, which needs credentials CI doesn't have); with tools hidden, the tool tests
+skip with the reason; hidden and required, they fail. The workflow itself first runs on the push.
+
+---
+
 ## 2026-11-25 — Step 2: the written model is checked by Microsoft's TMDL parser
 
 **Why.** `powerbi-report-author` validates only the report: in step 0 it still passed with the

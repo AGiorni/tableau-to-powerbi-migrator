@@ -1,5 +1,7 @@
 # t2pbi — Tableau → Power BI migrator
 
+[![CI](https://github.com/AGiorni/tableau-to-powerbi-migrator/actions/workflows/ci.yml/badge.svg)](https://github.com/AGiorni/tableau-to-powerbi-migrator/actions/workflows/ci.yml)
+
 AI-assisted tool that ingests a machine-readable Tableau workbook (`.twb` / `.twbx`) and
 produces a Power BI Project (`.pbip`) folder ready to open in Power BI Desktop.
 
