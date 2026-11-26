@@ -64,8 +64,12 @@ Open work is in [BACKLOG.md](BACKLOG.md); the reasoning behind past decisions is
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
+copy .env.example .env    # then fill in your settings (Azure OpenAI, Power BI Desktop path)
 pytest
 ```
+
+Settings and secrets live in `.env` (gitignored); `.env.example` lists them all. Real
+environment variables take precedence over the file.
 
 Optional, for validating the written project (each check is skipped if its tool is missing):
 Microsoft's pinned Power BI tools (needs Node.js) and the TMDL validator (needs a .NET 8 or later SDK).

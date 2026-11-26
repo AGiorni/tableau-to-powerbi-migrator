@@ -23,12 +23,13 @@ def build_chat_model(config: AzureOpenAIConfig | None = None) -> Any | None:
     from azure.identity import DefaultAzureCredential, get_bearer_token_provider
     from langchain_openai import AzureChatOpenAI
 
-    common = {
+    common: dict[str, Any] = {
         "azure_endpoint": config.endpoint,
         "azure_deployment": config.deployment,
         "api_version": config.api_version,
-        "temperature": 0,
     }
+    if config.temperature is not None:  # reasoning models accept only their default
+        common["temperature"] = config.temperature
 
     if config.api_key:
         return AzureChatOpenAI(api_key=config.api_key, **common)

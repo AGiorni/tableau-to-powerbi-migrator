@@ -16,6 +16,8 @@ dependencies = [
     "langchain-core>=0.3",
     "langchain-openai>=0.1.20",
     "azure-identity>=1.17",
+    # Reads local settings and secrets from a gitignored .env file (see .env.example).
+    "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]

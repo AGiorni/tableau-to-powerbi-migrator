@@ -38,7 +38,7 @@ now, GitHub Actions for CI, and an agent that edits PBIR/TMDL files directly. In
    `assemble → validate_tmdl → validate_pbir`, each skipped with an INFO issue when its tool is
    missing. All three samples load cleanly.
 3. [x] **Run both validators over every sample in the tests, in CI** *(done 2026-11-25; first
-   CI run pending the push)*. `tests/test_output_validation.py` migrates every sample through the
+   CI run green the same day: 101 passed in under two minutes)*. `tests/test_output_validation.py` migrates every sample through the
    graph with both validators on; `.github/workflows/ci.yml` installs all tools on a Windows
    runner and runs ruff + pytest with `T2PBI_REQUIRE_TOOLS=1`, plus the fidelity score in the job
    summary.
@@ -58,6 +58,10 @@ doesn't diff every file.
   Desktop instance are available, `dax_query_operations Validate` catches unknown columns and
   real syntax errors that `validate/dax.py`'s bracket check misses; feed its message back to the
   LLM on the `repair` route, keeping the bracket check as the offline fallback.
+- [ ] **The LLM visual router hides provider errors.** *(verified 2026-11-26)*
+  `LLMVisualRouter._ask` in [visual_router_llm.py](src/t2pbi/mapping/visual_router_llm.py)
+  returns None on any exception, so a failed call looks like "resolved by default" in the report.
+  Carry the error into the INFO issue, as the translator now does.
 - [ ] **Grow the test corpus beyond Book1.** Only Book1 has real data; the other samples are
   synthetic. More data-backed workbooks are what turn the fidelity harness from a smoke test into
   a measure.

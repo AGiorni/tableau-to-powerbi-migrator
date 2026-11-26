@@ -41,6 +41,8 @@ class MigrationState(BaseModel):
     pending_expressions: dict[str, TableauCalculatedField] = Field(default_factory=dict)
     # Latest LLM answer per pending key (None = no usable answer); consumed by validation.
     dax_candidates: dict[str, str | None] = Field(default_factory=dict)
+    # Why the model call itself failed on the latest pass (e.g. a 400 from the provider), per key.
+    provider_errors: dict[str, str] = Field(default_factory=dict)
     # Why each pending key's last candidate was rejected; sent back to the LLM on repair.
     dax_feedback: dict[str, list[str]] = Field(default_factory=dict)
     # Completed translate passes, compared with MigrationContext.max_translation_attempts.

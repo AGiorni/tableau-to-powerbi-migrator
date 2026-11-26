@@ -7,12 +7,15 @@ import json
 import sys
 from pathlib import Path
 
+from t2pbi.config import load_env_file
 from t2pbi.graph import MigrationContext, migrate
 from t2pbi.llm import build_chat_model
 from t2pbi.mapping.report import IssueSeverity
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Local settings first (.env), so the external tools started later inherit them too.
+    load_env_file()
     parser = argparse.ArgumentParser(prog="t2pbi", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 

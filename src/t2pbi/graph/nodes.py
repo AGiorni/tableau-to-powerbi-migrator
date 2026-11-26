@@ -57,7 +57,7 @@ def translate_expressions(state: MigrationState, runtime: Runtime[MigrationConte
     assert state.model is not None
     chat = runtime.context.chat_model
     schema = expression_translator.schema_context(state.model)
-    candidates = {
+    translations = {
         key: expression_translator.translate_calc(
             calc,
             owning_table=key.split("::", 1)[0],
@@ -67,7 +67,11 @@ def translate_expressions(state: MigrationState, runtime: Runtime[MigrationConte
         )
         for key, calc in state.pending_expressions.items()
     }
-    return {"dax_candidates": candidates, "translation_attempts": state.translation_attempts + 1}
+    return {
+        "dax_candidates": {key: t.dax for key, t in translations.items()},
+        "provider_errors": {key: t.error for key, t in translations.items() if t.error},
+        "translation_attempts": state.translation_attempts + 1,
+    }
 
 
 def validate_expressions(state: MigrationState, runtime: Runtime[MigrationContext]) -> dict:
@@ -94,7 +98,10 @@ def validate_expressions(state: MigrationState, runtime: Runtime[MigrationContex
         dax = state.dax_candidates.get(key)
         check = expression_translator.check_dax(dax, model)
         if not check.accepted:
-            pending[key], feedback[key] = calc, check.rejections
+            # A failed model call is the real reason, not "empty answer": say so in the report.
+            error = state.provider_errors.get(key)
+            reasons = [f"The model call failed: {error}"] if error else check.rejections
+            pending[key], feedback[key] = calc, reasons
             continue
 
         measure.expression = dax or ""
@@ -130,6 +137,7 @@ def validate_expressions(state: MigrationState, runtime: Runtime[MigrationContex
         "pending_expressions": pending,
         "dax_feedback": feedback,
         "dax_candidates": {},
+        "provider_errors": {},
         "issues": report.issues,
     }
 

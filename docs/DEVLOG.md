@@ -9,6 +9,33 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-26 — Settings in .env; reasoning models reject temperature 0; provider errors surfaced
+
+**Settings.** Local settings and secrets live in a gitignored `.env` (template `.env.example`),
+loaded by `config.load_env_file()` with `python-dotenv`; real environment variables win, and an
+empty value means "default". Tests that check settings point `T2PBI_ENV_FILE` at nothing: the
+first version of those tests silently read the developer's real `.env`.
+
+**The constraint.** The first live call to the user's deployment (a newer reasoning model) failed
+with *400 Unsupported value: 'temperature' does not support 0.0*: reasoning models (o-series,
+gpt-5 family) accept only their default temperature, and the client always sent 0.
+`T2PBI_AZURE_OPENAI_TEMPERATURE` now controls it: default `0` (most repeatable, fine for gpt-4o),
+`default` to send none.
+
+**The bigger problem it exposed.** The translator swallowed provider errors by design (a
+migration must finish), but threw the reason away: the report said "Could not produce valid DAX"
+and the repair loop told the model its answer was empty. `translate_calc` now returns the error
+with the (absent) DAX, the graph carries it for one pass (`provider_errors`), and the ERROR
+issue's detail says "The model call failed: …". The visual router still has the old behaviour
+(BACKLOG).
+
+**Verified** against the real deployment: the live translation test passes with
+`temperature=default`, and given Book1's 192px "Sales by Category" thumbnail the model answered
+"a small-multiple area chart with three panels and two colours" — correct, so step 1c's image
+input works.
+
+---
+
 ## 2026-11-25 — Step 3: every sample through both validators, in CI
 
 **The gap it closes.** Tests that need an external tool skip when it's missing — right on a

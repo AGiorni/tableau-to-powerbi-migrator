@@ -114,7 +114,19 @@ def test_check_dax(superstore_twb, mapped):
 
 def test_translate_calc_degrades_on_provider_error(superstore_twb, mapped, fake_chat):
     calc = next(iter(mapped(superstore_twb).pending_expressions.values()))
-    assert translate_calc(calc, "Superstore", "", fake_chat(RuntimeError("provider down"))) is None
+    translation = translate_calc(calc, "Superstore", "", fake_chat(RuntimeError("provider down")))
+    assert translation.dax is None
+    assert translation.error == "RuntimeError: provider down"
+
+
+def test_provider_error_reaches_the_report(superstore_twb, tmp_path, fake_chat):
+    # Regression: a rejected call (here, a model refusing temperature=0) used to be reported as
+    # "empty answer", hiding the real cause.
+    refusal = ValueError("Error code: 400 - Unsupported value: 'temperature' does not support 0.0")
+    result = _migrate(superstore_twb, tmp_path, fake_chat(refusal))
+
+    errors = [i for i in _expression_issues(result) if i.severity is IssueSeverity.ERROR]
+    assert errors and all("The model call failed: ValueError: Error code: 400" in i.detail for i in errors)
 
 
 @pytest.mark.skipif(

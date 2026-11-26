@@ -74,6 +74,14 @@ snapshot the output on both revisions and compare —
 the same with `after.json` on the new one, then `python scripts/snapshot_outputs.py compare
 before.json after.json`. It masks the random page/visual ids, so it reports only real changes.
 
+## Settings and secrets
+
+Local settings (Azure OpenAI endpoint and key, `PBI_DESKTOP_PATH`, …) go in `.env` at the repo
+root: gitignored, template in `.env.example` (keep the two in sync when adding a setting).
+`config.load_env_file()` loads it; real environment variables always win, and an empty value
+means "use the default". Never print or commit `.env` values. Tests that read settings must set
+`T2PBI_ENV_FILE` to a non-existent file, or they pick up the developer's real `.env`.
+
 ## External tools
 
 Microsoft's Power BI tools are pinned in `tools/package.json`; install them with `npm ci` in

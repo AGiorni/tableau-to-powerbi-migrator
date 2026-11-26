@@ -58,14 +58,26 @@ class DaxCheck:
         return not self.rejections
 
 
+@dataclass(frozen=True)
+class Translation:
+    """One translation attempt: cleaned DAX, or None with the provider's error when the call failed."""
+
+    dax: str | None
+    error: str | None = None
+
+
 def translate_calc(
     calc: TableauCalculatedField,
     owning_table: str | None,
     schema_context: str,
     chat_model: Any,
     feedback: list[str] | None = None,
-) -> str | None:
-    """Ask the chat model for one DAX expression. Returns cleaned DAX, or None on any failure."""
+) -> Translation:
+    """Ask the chat model for one DAX expression.
+
+    Never raises: a provider failure comes back as ``Translation(None, error)`` so the migration
+    continues, but the reason reaches the report instead of being swallowed.
+    """
 
     from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -83,10 +95,17 @@ def translate_calc(
         response = chat_model.invoke(
             [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=user)]
         )
-    except Exception:  # noqa: BLE001 - degrade gracefully on any provider error
-        return None
+    except Exception as exc:  # noqa: BLE001 - degrade gracefully on any provider error
+        return Translation(None, provider_error_message(exc))
     content = getattr(response, "content", None)
-    return clean_dax(content if isinstance(content, str) else None)
+    return Translation(clean_dax(content if isinstance(content, str) else None))
+
+
+def provider_error_message(exc: Exception, limit: int = 300) -> str:
+    """A one-line, bounded description of a failed model call, for the migration report."""
+
+    text = " ".join(f"{type(exc).__name__}: {exc}".split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def check_dax(dax: str | None, model: PBIModel) -> DaxCheck:
