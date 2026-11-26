@@ -9,6 +9,37 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-26 — Step 4.3: the agent's edit tools
+
+`refine/edits.py` is what the agent will be able to do to a report: describe a page, list the
+model's fields, set the visual type, bind or remove a field, set the title, set the sort, and
+turn a page into a hidden report-page tooltip linked from its host visual.
+
+**Design choices.**
+- *Typed edits, not free-form JSON patches.* Every argument is checked before anything is
+  written: visual types and role names against the visual catalog, fields against the model
+  (columns and measures read from the TMDL), grouping-vs-measure role kinds, role capacities. A
+  refusal is an `EditError` worded for the agent — what was wrong and what is allowed — so it can
+  correct itself instead of producing a blank visual.
+- *One JSON builder.* Projections, field expressions, literals and titles come from
+  `emit/pbir_writer.py` (its helpers made public; output byte-identical), so an edited visual is
+  shaped exactly like a freshly written one.
+- *Shapes from Microsoft's tooling.* The tooltip link is the `visualTooltip` container object with
+  `type` `'Canvas'` and `section` = the page's name, found with `powerbi-report-author formatting
+  describe-object`; literal encodings checked with `expr encode`. The page side is `type: Tooltip`,
+  `visibility: HiddenInViewMode`, a `pageBinding`, and Desktop's 320×240 tooltip canvas.
+- *Edits only write files.* Keeping or undoing a change is the review step's decision (4.4).
+
+**Verified.** On Book1, five edits fix exactly the six derived checks they target and break none,
+and the edited report passes both of Microsoft's validators. Whether Desktop *renders* the new
+tooltip page as intended isn't checked yet — 4.4's review renders every change.
+
+**Not yet.** Date levels (`Order Date:month`) and row counts need a model change first (a column
+or measure): 4.5. Found on the way: `expr encode` doesn't double an apostrophe in a string
+literal, while our writer does — an open question in BACKLOG.
+
+---
+
 ## 2026-11-26 — Step 4.2: the work list and the git workspace
 
 **Shape agreed for the agent** (user, 2026-11-26): deterministic nodes hand the agent its work

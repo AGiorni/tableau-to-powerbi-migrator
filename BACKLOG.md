@@ -48,7 +48,10 @@ now, GitHub Actions for CI, and an agent that edits PBIR/TMDL files directly. In
      page from derived checks, report issues and, later, the judge), `refine/workspace.py` (git
      repo in the output folder, project files only), `prepare_workspace` → `assess` nodes,
      `t2pbi migrate --refine`. Book1: 15 problems on 4 pages.
-   - [ ] *4.3 Edit tools*: typed PBIR edits, each validated then committed or reverted.
+   - [x] *4.3 Edit tools* *(done 2026-11-26)*: `refine/edits.py` — describe a page, list model
+     fields, set visual type, bind / remove a field, set title, set sort, make a tooltip page and
+     link it from its host visual. Checked against the catalog and the model; the edited Book1
+     report passes both validators. Committing or reverting is the review step's job (4.4).
    - [ ] *4.4 Agent loop*: model + Desktop session across the run; before/after fidelity.
    - [ ] *4.5 Model-side tools*: measures and columns through the MCP server.
 
@@ -183,6 +186,10 @@ doesn't diff every file.
 - [ ] **Is `reference_pbip/` a fixture or scratch?** It is gitignored but present in the working
   tree. If tests or a contributor would want it as a reference for Desktop-parity output, it
   should be tracked; if it is scratch, leave it ignored and say so here.
+
+- [ ] **How should an apostrophe in a PBIR string literal be escaped?** Our writer doubles it
+  (`'O''Neil'`, as in DAX), but `powerbi-report-author expr encode --kind string` returns
+  `'O'Neil'`. Check which one Desktop reads correctly before titles with apostrophes ship.
 
 - [ ] **How much does LOD → DAX translation actually get right?** The repair loop catches
   *syntax* failures, and reference errors are only warnings. Nothing measures semantic

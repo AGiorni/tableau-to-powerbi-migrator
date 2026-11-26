@@ -26,7 +26,7 @@ _FUNC_NAMES = {
 
 def build_visual_json(visual: PBIVisual) -> dict:
     query_state = {
-        well: {"projections": [_projection(f, active=(well == "Category" and i == 0))
+        well: {"projections": [projection(f, active=(well == "Category" and i == 0))
                                for i, f in enumerate(fields)]}
         for well, fields in visual.wells.items()
     }
@@ -35,7 +35,7 @@ def build_visual_json(visual: PBIVisual) -> dict:
         query["sortDefinition"] = {
             "sort": [
                 {
-                    "field": _field_expr(visual.sort_field),
+                    "field": field_expression(visual.sort_field),
                     "direction": "Descending" if visual.sort_descending else "Ascending",
                 }
             ],
@@ -63,20 +63,23 @@ def _visual_body(visual: PBIVisual, query: dict) -> dict:
         "drillFilterOtherVisuals": True,
     }
     if visual.title:
-        body["visualContainerObjects"] = {
-            "title": [
-                {
-                    "properties": {
-                        "show": _literal("true"),
-                        "text": _literal(f"'{visual.title.replace(chr(39), chr(39) * 2)}'"),
-                    }
-                }
-            ]
-        }
+        body["visualContainerObjects"] = {"title": title_object(visual.title)}
     return body
 
 
-def _literal(value: str) -> dict:
+def title_object(title: str) -> list[dict]:
+    """The ``title`` visual container object showing ``title``."""
+
+    return [{"properties": {"show": literal("true"), "text": string_literal(title)}}]
+
+
+def string_literal(text: str) -> dict:
+    """A PBIR string literal, ``'text'`` (an embedded quote is doubled)."""
+
+    return literal(f"'{text.replace(chr(39), chr(39) * 2)}'")
+
+
+def literal(value: str) -> dict:
     return {"expr": {"Literal": {"Value": value}}}
 
 
@@ -91,10 +94,10 @@ def build_page_json(page: PBIReportPage) -> dict:
     }
 
 
-def _projection(field: PBIFieldRef, active: bool) -> dict:
+def projection(field: PBIFieldRef, active: bool) -> dict:
     query_ref, native_ref = _refs(field)
     projection = {
-        "field": _field_expr(field),
+        "field": field_expression(field),
         "queryRef": query_ref,
         "nativeQueryRef": native_ref,
     }
@@ -103,7 +106,7 @@ def _projection(field: PBIFieldRef, active: bool) -> dict:
     return projection
 
 
-def _field_expr(field: PBIFieldRef) -> dict:
+def field_expression(field: PBIFieldRef) -> dict:
     source = {"Expression": {"SourceRef": {"Entity": field.entity}}, "Property": field.property}
     if field.kind is FieldKind.MEASURE:
         return {"Measure": source}

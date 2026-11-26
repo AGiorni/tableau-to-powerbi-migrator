@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 _MEASURE_LINE = re.compile(r"^\tmeasure (?:'((?:[^']|'')+)'|(\S+)) =(.*)$")
+_COLUMN_LINE = re.compile(r"^\tcolumn (?:'((?:[^']|'')+)'|(\S+))\s*$")
 
 
 @dataclass
@@ -39,6 +40,8 @@ class Project:
     pages: list[Page]
     # Measure name -> (table, DAX expression), from the TMDL table files.
     measures: dict[str, tuple[str, str]]
+    # Table -> its column names, from the TMDL table files.
+    columns: dict[str, list[str]] = field(default_factory=dict)
 
     def page(self, display_name: str) -> Page | None:
         return next((p for p in self.pages if p.display_name == display_name), None)
@@ -50,10 +53,24 @@ def read_project(project_dir: str | Path) -> Project:
     root = Path(project_dir)
     report = next(root.glob("*.Report"), None)
     model = next(root.glob("*.SemanticModel"), None)
+    tables = model / "definition" / "tables" if model else None
     return Project(
         pages=_read_pages(report / "definition" / "pages") if report else [],
-        measures=_read_measures(model / "definition" / "tables") if model else {},
+        measures=_read_measures(tables) if tables else {},
+        columns=_read_columns(tables) if tables else {},
     )
+
+
+def _read_columns(tables_dir: Path) -> dict[str, list[str]]:
+    columns: dict[str, list[str]] = {}
+    for tmdl in sorted(tables_dir.glob("*.tmdl")):
+        names = []
+        for line in tmdl.read_text(encoding="utf-8").splitlines():
+            match = _COLUMN_LINE.match(line)
+            if match:
+                names.append((match.group(1) or "").replace("''", "'") or match.group(2))
+        columns[tmdl.stem] = names
+    return columns
 
 
 def _read_pages(pages_dir: Path) -> list[Page]:
