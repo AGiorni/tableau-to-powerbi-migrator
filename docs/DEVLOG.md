@@ -9,6 +9,36 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-26 — Step 4 begins: expectations derived from the workbook (the agent's eyes)
+
+**Decisions for step 4** (user, 2026-11-26): Book1's known gaps are the agent's training ground
+(they'll move into the deterministic mapper over time, shrinking the agent's list to the long
+tail); the work list comes from the report, the visual judge and checks derived from the
+workbook; the agent is autonomous but every change is a reviewable git commit; it only runs with
+`t2pbi migrate --refine`. Built in five increments; this is the first.
+
+**What.** The parser now reads three things it ignored: custom titles (static text, with
+`<Sheet Name>` filled in and field inserts listed separately), viz-in-tooltip links
+(`<Sheet name="…">` in a sheet's tooltip text) and shelf sorts (`shelf-sort-v2`). The structural
+scorer gained a `sort` check. `fidelity/derived.py` builds expectations for any workbook from the
+Tableau IR alone: field **coverage** (every field on a shelf or encoding, with its aggregation or
+date level), title, viz-in-tooltip, sort, and dashboard contents and slicers.
+
+**Why coverage and not roles.** Deriving which role a field belongs in, or which visual type to
+use, means re-implementing the mapper — and inheriting its blind spots, so its mistakes would
+pass. Coverage is independent of those choices.
+
+**Measured against the oracle.** On Book1 the derived expectations match `Book1.toml` on every
+title, sheet kind, sort, dashboard content and slicer, and cover every field it places
+(`tests/test_fidelity_derived.py`). On today's output they flag 15 failures — every known gap
+except the two that are judgements, not coverage: area stacking and the map's colour-vs-size.
+`scripts/fidelity.py --derived` prints that list; it's the agent's work list for a workbook
+nobody wrote expectations for.
+
+Book1's structural baseline is now **45/63 (71%)** (the new sort check is a known gap).
+
+---
+
 ## 2026-11-26 — Fidelity steps 1b and 1c: numbers and pictures through Power BI Desktop
 
 **What.** `scripts/fidelity.py --render` now also opens the migrated project in Power BI Desktop,

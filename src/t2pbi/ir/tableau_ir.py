@@ -8,6 +8,7 @@ map (or want to report on) are retained.
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -159,6 +160,14 @@ class TableauEncoding(BaseModel):
     field: TableauFieldRef
 
 
+class TableauSort(BaseModel):
+    """A sort on a shelf: ``dimension`` ordered by ``by`` (a measure), or by itself when None."""
+
+    dimension: TableauFieldRef
+    direction: Literal["asc", "desc"] = "asc"
+    by: TableauFieldRef | None = None
+
+
 class TableauWorksheet(BaseModel):
     """A worksheet: its mark type and the fields on its shelves and encodings."""
 
@@ -171,6 +180,18 @@ class TableauWorksheet(BaseModel):
     # Measures listed by a Measure Names filter (a Measure Names/Measure Values table).
     measure_names: list[TableauFieldRef] = Field(default_factory=list)
     is_map: bool = Field(default=False, description="Geographic worksheet (map source/geometry).")
+    title: str | None = Field(
+        default=None,
+        description="Static text of a custom title, with <Sheet Name> filled in and field inserts "
+        "removed; None when the sheet shows Tableau's default title (its name).",
+    )
+    title_fields: list[str] = Field(
+        default_factory=list, description="Fields inserted into the title (shown as their filter values)."
+    )
+    tooltip_sheets: list[str] = Field(
+        default_factory=list, description="Sheets embedded in this sheet's tooltip (viz in tooltip)."
+    )
+    sorts: list[TableauSort] = Field(default_factory=list)
 
 
 class TableauDashboardZone(BaseModel):

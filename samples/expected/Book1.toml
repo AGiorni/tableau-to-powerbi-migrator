@@ -97,12 +97,13 @@ title = "Profit Ratio by City"
 visual = ["clusteredBarChart"]
 roles.Category = ["City"]
 roles.Y = ["profit ratio:measure"]
+sort = { by = "profit ratio:measure", direction = "ascending" }
 known_gaps."title" = "custom worksheet titles are not migrated (the sheet name is used)"
 known_gaps."tooltip-page" = "viz-in-tooltip sheets become ordinary pages"
 known_gaps."hidden" = "viz-in-tooltip sheets become ordinary pages"
+known_gaps."sort" = "sort direction is never derived from the source (always descending)"
 notes = [
     "Not checked: bars are coloured by profit ratio (a gradient: conditional formatting, not a role).",
-    "Not checked: cities are sorted ascending by profit ratio (sort direction: BACKLOG).",
     "Not checked: value labels on the bars.",
     "Not checked: the map visual should use this page as its tooltip.",
 ]

@@ -97,6 +97,8 @@ class SheetExpectation:
     fields: list[FieldSpec] = field(default_factory=list)
     contains: list[str] = field(default_factory=list)
     slicers: list[FieldSpec] = field(default_factory=list)
+    # The visual's sort: (field it's sorted by, "ascending" | "descending").
+    sort: tuple[FieldSpec, str] | None = None
     # Reference numbers as Tableau displays them ("10,194", "15.54%"), per field spec: the
     # sheet's grand total of that field. Checked by fidelity.numeric against the running model.
     values: dict[FieldSpec, str] = field(default_factory=dict)
@@ -125,9 +127,20 @@ def load_expectations(path: str | Path) -> WorkbookExpectations:
     return WorkbookExpectations(workbook=data["workbook"], sheets=sheets)
 
 
+def _parse_sort(raw: dict | None) -> tuple[FieldSpec, str] | None:
+    """``sort = { by = "profit ratio:measure", direction = "ascending" }``."""
+
+    if raw is None:
+        return None
+    direction = str(raw.get("direction", "ascending")).lower()
+    if direction not in ("ascending", "descending") or "by" not in raw:
+        raise ValueError(f"sort needs `by` and direction ascending|descending, got {raw!r}")
+    return FieldSpec.parse(raw["by"]), direction
+
+
 _SHEET_KEYS = {
     "name", "kind", "page", "title", "visual", "roles", "fields", "contains", "slicers",
-    "values", "known_gaps", "notes",
+    "sort", "values", "known_gaps", "notes",
 }
 
 
@@ -145,6 +158,7 @@ def _parse_sheet(raw: dict) -> SheetExpectation:
         fields=[FieldSpec.parse(f) for f in raw.get("fields", [])],
         contains=list(raw.get("contains", [])),
         slicers=[FieldSpec.parse(f) for f in raw.get("slicers", [])],
+        sort=_parse_sort(raw.get("sort")),
         values={FieldSpec.parse(k): str(v) for k, v in raw.get("values", {}).items()},
         known_gaps=dict(raw.get("known_gaps", {})),
         notes=list(raw.get("notes", [])),

@@ -40,7 +40,17 @@ now, GitHub Actions for CI, and an agent that edits PBIR/TMDL files directly. In
    graph with both validators on; `.github/workflows/ci.yml` installs all tools on a Windows
    runner and runs ruff + pytest with `T2PBI_REQUIRE_TOOLS=1`, plus the fidelity score in the job
    summary.
-4. [ ] **Agentic refinement subgraph.** A tool-using agent inside the graph that works through
+4. [ ] **Agentic refinement subgraph** — in five increments (decisions in DEVLOG 2026-11-26):
+   - [x] *4.1 Derived expectations* *(done 2026-11-26)*: parser reads titles, viz-in-tooltip
+     links and sorts; `fidelity/derived.py` builds coverage checks from any workbook; `sort`
+     structural check. Book1 baseline now 45/63.
+   - [ ] *4.2 Work list and workspace*: `assess` node, git repo in the output folder,
+     `--refine` flag.
+   - [ ] *4.3 Edit tools*: typed PBIR edits, each validated then committed or reverted.
+   - [ ] *4.4 Agent loop*: model + Desktop session across the run; before/after fidelity.
+   - [ ] *4.5 Model-side tools*: measures and columns through the MCP server.
+
+   Original description: A tool-using agent inside the graph that works through
    report issues and fidelity gaps on the baseline `.pbip`. Tools: edit PBIR/TMDL files, the
    Authoring MCP server, `powerbi-report-author validate`, Desktop Bridge reload and screenshot,
    Tableau thumbnails. Keeps a change only if it validates and fidelity doesn't drop; one git

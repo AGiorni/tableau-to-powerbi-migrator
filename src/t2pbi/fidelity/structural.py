@@ -88,6 +88,12 @@ def _sheet_checks(sheet: SheetExpectation, project: Project, titles: dict[str, s
     if sheet.fields:
         bound = [f for fields in visual.roles.values() for f in fields] if visual else []
         yield from _field_checks("fields", sheet.fields, bound, project)
+    if sheet.sort is not None:
+        spec, direction = sheet.sort
+        actual = visual.sort[0] if visual and visual.sort else None
+        ok = actual is not None and matches(spec, actual[0], project) and actual[1].lower() == direction
+        got = f"{describe(actual[0])} {actual[1].lower()}" if actual else "no sort"
+        yield "sort", ok, f"got {got}, want {spec} {direction}"
 
 
 def _dashboard_checks(sheet: SheetExpectation, page: Page | None, titles: dict[str, str]):

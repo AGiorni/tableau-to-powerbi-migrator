@@ -21,6 +21,8 @@ class Visual:
     title: str | None
     # Role -> the field expression of each projection (the PBIR "field" object).
     roles: dict[str, list[dict]] = field(default_factory=dict)
+    # The visual's sort, in order: (field expression, "Ascending" | "Descending").
+    sort: list[tuple[dict, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -79,15 +81,22 @@ def _read_pages(pages_dir: Path) -> list[Page]:
 def _read_visual(path: Path) -> Visual:
     raw = json.loads(path.read_text(encoding="utf-8"))
     body = raw.get("visual", {})
-    query_state = body.get("query", {}).get("queryState", {})
+    query = body.get("query", {})
     roles = {
-        role: [p["field"] for p in state.get("projections", [])] for role, state in query_state.items()
+        role: [p["field"] for p in state.get("projections", [])]
+        for role, state in query.get("queryState", {}).items()
     }
+    sort = [
+        (s["field"], s.get("direction", "Ascending"))
+        for s in query.get("sortDefinition", {}).get("sort", [])
+        if "field" in s
+    ]
     return Visual(
         name=raw.get("name", path.parent.name),
         visual_type=body.get("visualType", ""),
         title=_title(body),
         roles=roles,
+        sort=sort,
     )
 
 

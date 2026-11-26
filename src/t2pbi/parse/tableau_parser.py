@@ -28,6 +28,7 @@ from t2pbi.ir.tableau_ir import (
     TableauParameter,
     TableauRelation,
     TableauRole,
+    TableauSort,
     TableauWorkbook,
     TableauWorksheet,
     strip_brackets,
@@ -395,8 +396,10 @@ def _parse_worksheet(ws_el: etree._Element) -> TableauWorksheet:
         if (ref := _parse_field_ref(enc.get("column"))) is not None
     ]
 
+    name = ws_el.get("name") or ""
+    title, title_fields = _parse_title(ws_el, name)
     return TableauWorksheet(
-        name=ws_el.get("name") or "",
+        name=name,
         datasource_names=[n for n in ds_names if n is not None],
         mark_class=mark_class,
         rows=rows,
@@ -404,7 +407,60 @@ def _parse_worksheet(ws_el: etree._Element) -> TableauWorksheet:
         encodings=encodings,
         measure_names=_parse_measure_names(ws_el),
         is_map=_is_map_worksheet(ws_el),
+        title=title,
+        title_fields=title_fields,
+        tooltip_sheets=_parse_tooltip_sheets(ws_el),
+        sorts=_parse_sorts(ws_el),
     )
+
+
+_TITLE_FIELD_INSERT = re.compile(r"<(\[[^<>]*\])>")
+_TITLE_PLACEHOLDER = re.compile(r"<[^<>]*>")
+_TOOLTIP_SHEET = re.compile(r'<Sheet name="([^"]+)"')
+
+
+def _parse_title(ws_el: etree._Element, sheet_name: str) -> tuple[str | None, list[str]]:
+    """A custom title's static text and the fields inserted into it.
+
+    Tableau stores the title as text runs with placeholders: ``<Sheet Name>`` (filled in here)
+    and field inserts such as ``<[ds].[State/Province]>``, which show the field's current filter
+    values and are dropped from the static text.
+    """
+
+    runs = ws_el.findall("./layout-options/title/formatted-text/run")
+    if not runs:
+        return None, []
+    text = "".join(r.text or "" for r in runs)
+    # "[ds].[State/Province]" -> "State/Province": the last bracketed segment.
+    fields = [m.rsplit("[", 1)[-1].rstrip("]") for m in _TITLE_FIELD_INSERT.findall(text)]
+    text = text.replace("<Sheet Name>", sheet_name)
+    text = _TITLE_PLACEHOLDER.sub(" ", text)
+    return " ".join(text.split()) or None, fields
+
+
+def _parse_tooltip_sheets(ws_el: etree._Element) -> list[str]:
+    """Sheets embedded in this sheet's tooltip (``<Sheet name="...">`` in the tooltip text)."""
+
+    names: list[str] = []
+    for tooltip in ws_el.iter("customized-tooltip"):
+        for run in tooltip.iter("run"):
+            names.extend(n for n in _TOOLTIP_SHEET.findall(run.text or "") if n not in names)
+    return names
+
+
+def _parse_sorts(ws_el: etree._Element) -> list[TableauSort]:
+    """Shelf sorts (``<shelf-sort-v2>``): a dimension ordered by a measure, ascending or descending."""
+
+    sorts: list[TableauSort] = []
+    for el in ws_el.iter("shelf-sort-v2"):
+        dimension = _parse_field_ref(el.get("dimension-to-sort"))
+        if dimension is None:
+            continue
+        direction = "desc" if (el.get("direction") or "").upper().startswith("DESC") else "asc"
+        sorts.append(
+            TableauSort(dimension=dimension, direction=direction, by=_parse_field_ref(el.get("measure-to-sort-by")))
+        )
+    return sorts
 
 
 def _is_map_worksheet(ws_el: etree._Element) -> bool:

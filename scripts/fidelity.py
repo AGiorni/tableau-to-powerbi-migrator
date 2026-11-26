@@ -29,9 +29,12 @@ from pathlib import Path
 
 from t2pbi.config import load_env_file
 from t2pbi.fidelity import load_expectations, read_project, score_structural
+from t2pbi.fidelity.derived import derive_expectations
 from t2pbi.fidelity.references import extract_thumbnails, find_reference_image
 from t2pbi.graph import MigrationContext, migrate
+from t2pbi.ingest import load_workbook
 from t2pbi.llm import build_chat_model
+from t2pbi.parse import parse_workbook
 
 _ROOT = Path(__file__).resolve().parents[1]
 _EXPECTED = _ROOT / "samples" / "expected"
@@ -48,6 +51,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--render", action="store_true",
         help="Also check numbers and pictures in Power BI Desktop (Windows; needs the tools and Desktop).",
+    )
+    parser.add_argument(
+        "--derived", action="store_true",
+        help="Also score against expectations derived from the workbook itself (what the agent sees).",
     )
     args = parser.parse_args(argv)
 
@@ -73,6 +80,12 @@ def main(argv: list[str] | None = None) -> int:
         regressions += sum(r.outcome in ("fail", "fixed") for r in structural)
         report[name] = {"structural": _summarize(structural)}
         _print_checks(f"{name}: structural fidelity", structural)
+
+        if args.derived:
+            workbook = parse_workbook(load_workbook(_INPUT / expected.workbook))
+            derived = score_structural(derive_expectations(workbook, expected.workbook), project)
+            report[name]["derived"] = _summarize(derived)
+            _print_checks(f"{name}: structural fidelity, derived expectations (no oracle)", derived)
 
         if args.render:
             numeric, verdicts = asyncio.run(
@@ -144,6 +157,7 @@ def _print_checks(title: str, results) -> None:
         flags = ", ".join(f"{n} {k}" for k, n in counts.items() if k != "pass")
         print(f"  {sheet[:34]:34} {passed:>3}/{len(rs):<4}  {flags}")
         for r in rs:
+            # Derived checks have no known gaps, so every failure prints: that's the work list.
             if r.outcome in ("fail", "fixed") or (r.outcome == "gap" and "value[" in r.check):
                 print(f"      {r.outcome.upper()}: {r.check} — {r.detail or r.known_gap}")
     total = len(results)
