@@ -52,7 +52,9 @@ Working end to end on the sample workbooks:
   serializer for the model and `powerbi-report-author validate` for the report; diagnostics land
   in the migration report.
 - **Fidelity** — `scripts/fidelity.py` scores how faithfully the samples are migrated, against
-  hand-reviewed expectations in `samples/expected/`.
+  hand-reviewed expectations in `samples/expected/`: structure (in CI), and with `--render` the
+  numbers (queried in Power BI Desktop) and the pictures (an LLM compares Desktop screenshots with
+  Tableau screenshots in `samples/reference/`).
 
 Open work is in [BACKLOG.md](BACKLOG.md); the reasoning behind past decisions is in
 [docs/DEVLOG.md](docs/DEVLOG.md). For a visual map of the pipeline, open

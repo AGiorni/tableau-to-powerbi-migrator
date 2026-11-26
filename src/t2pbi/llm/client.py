@@ -12,6 +12,13 @@ from typing import Any
 from t2pbi.config import AzureOpenAIConfig, load_azure_openai_config
 
 
+def provider_error_message(exc: Exception, limit: int = 300) -> str:
+    """A one-line, bounded description of a failed model call, for the migration report."""
+
+    text = " ".join(f"{type(exc).__name__}: {exc}".split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
 def build_chat_model(config: AzureOpenAIConfig | None = None) -> Any | None:
     """Return a configured ``AzureChatOpenAI`` instance, or ``None`` if unavailable."""
 

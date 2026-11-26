@@ -557,7 +557,8 @@ html { scroll-behavior: smooth; }
         <tr><td>emit/</td><td><code>tmdl_writer</code>, <code>pbir_writer</code>, <code>pbip_assembler</code> (folder layout, base theme).</td></tr>
         <tr><td>llm/client.py</td><td>Builds <code>AzureChatOpenAI</code>, or returns None.</td></tr>
         <tr><td>toolchain.py</td><td>Finds Microsoft's pinned tools (<code>tools/package.json</code>) before anything on PATH.</td></tr>
-        <tr><td>fidelity/</td><td>Scores the emitted project against <code>samples/expected/*.toml</code>: structural checks (pages, visual types, field bindings) read from the files; known gaps listed per check.</td></tr>
+        <tr><td>fidelity/</td><td>Scores the emitted project against <code>samples/expected/*.toml</code>: <code>structural</code> (pages, visual types, field bindings, read from the files), <code>numeric</code> (values queried in Desktop vs Tableau's numbers) and <code>visual</code> (LLM judge: Desktop screenshot vs Tableau screenshot); known gaps listed per check.</td></tr>
+        <tr><td>desktop/</td><td>Drives a running Power BI Desktop: <code>bridge</code> (open, screenshot, close via the Desktop Bridge CLI), <code>modeling</code> (refresh, DAX via the Authoring MCP server), <code>session</code> (both, always closing Desktop). Windows only; not in CI.</td></tr>
       </tbody>
     </table>
   </div>
@@ -598,7 +599,8 @@ python scripts\refresh_visual_catalog.py
 # build the TMDL validator (needs .NET)
 dotnet publish tools\tmdl-validate -c Release -o tools\tmdl-validate\bin\publish
 
-# fidelity score of the samples
+# fidelity score of the samples (structural; add --render for
+# numbers and pictures through Desktop + the LLM judge)
 python scripts\fidelity.py
 
 # output unchanged? (run on both revisions)
@@ -609,7 +611,7 @@ python scripts\snapshot_outputs.py compare a.json b.json</pre>
 </section>
 
 <footer>
-  Checked against <span class="mono">main</span> after step 2 (validate_tmdl), 25 Nov 2026. If the code has moved since, trust the code, and update this map.
+  Checked against <span class="mono">main</span> after fidelity steps 1b/1c, 26 Nov 2026. If the code has moved since, trust the code, and update this map.
 </footer>
 
 </div>

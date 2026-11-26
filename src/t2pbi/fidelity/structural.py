@@ -51,7 +51,9 @@ def score_structural(expected: WorkbookExpectations, project: Project) -> list[C
             results.append(
                 CheckResult(sheet.name, check, passed, detail, sheet.known_gaps.get(check))
             )
-        unknown = set(sheet.known_gaps) - {r.check for r in results if r.sheet == sheet.name}
+        # value[...] gaps belong to the numeric layer, which checks them itself.
+        structural_gaps = {k for k in sheet.known_gaps if not k.startswith("value[")}
+        unknown = structural_gaps - {r.check for r in results if r.sheet == sheet.name}
         if unknown:
             raise ValueError(f"sheet {sheet.name!r}: known_gaps name unknown checks {sorted(unknown)}")
     return results

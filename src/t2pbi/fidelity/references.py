@@ -2,13 +2,17 @@
 
 The user supplies screenshots once per workbook — one PNG per worksheet or dashboard, named after
 it. People name files loosely, so names are matched ignoring case, spaces and punctuation
-("Tooltip: Profit Ratio by City" finds ``tooltip profit ratio by city.png``).
+("Tooltip: Profit Ratio by City" finds ``tooltip profit ratio by city.png``). Without a
+screenshot, the small thumbnails Tableau embeds in the workbook are the fallback.
 """
 
 from __future__ import annotations
 
+import base64
 import re
 from pathlib import Path
+
+from t2pbi.ingest import load_workbook
 
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 
@@ -34,3 +38,21 @@ def find_reference_image(folder: str | Path, sheet_name: str) -> Path | None:
     if len(hits) > 1:
         raise ValueError(f"several reference images match {sheet_name!r}: {[p.name for p in hits]}")
     return hits[0] if hits else None
+
+
+def extract_thumbnails(workbook: str | Path, out_dir: str | Path) -> dict[str, Path]:
+    """Write the PNG thumbnails Tableau embeds in a workbook (up to 192px); sheet name -> file."""
+
+    root = load_workbook(workbook).root
+    out = Path(out_dir)
+    found: dict[str, Path] = {}
+    for thumb in root.iter("thumbnail"):
+        name = thumb.get("name") or ""
+        data = "".join((thumb.text or "").split())
+        if not name or not data:
+            continue
+        out.mkdir(parents=True, exist_ok=True)
+        path = out / f"{re.sub(r'[^0-9A-Za-z -]', '_', name)}.png"
+        path.write_bytes(base64.b64decode(data))
+        found[name] = path
+    return found

@@ -14,6 +14,7 @@ from typing import Any
 
 from t2pbi.ir.powerbi_ir import PBIModel
 from t2pbi.ir.tableau_ir import TableauCalculatedField
+from t2pbi.llm import provider_error_message
 from t2pbi.mapping.model_mapper import UNTRANSLATED_DAX
 from t2pbi.validate import validate_dax
 
@@ -99,13 +100,6 @@ def translate_calc(
         return Translation(None, provider_error_message(exc))
     content = getattr(response, "content", None)
     return Translation(clean_dax(content if isinstance(content, str) else None))
-
-
-def provider_error_message(exc: Exception, limit: int = 300) -> str:
-    """A one-line, bounded description of a failed model call, for the migration report."""
-
-    text = " ".join(f"{type(exc).__name__}: {exc}".split())
-    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def check_dax(dax: str | None, model: PBIModel) -> DaxCheck:

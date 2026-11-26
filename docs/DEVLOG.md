@@ -9,6 +9,49 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-26 — Fidelity steps 1b and 1c: numbers and pictures through Power BI Desktop
+
+**What.** `scripts/fidelity.py --render` now also opens the migrated project in Power BI Desktop,
+loads the data, checks the numbers and judges the pictures:
+
+- `t2pbi/desktop/` drives Desktop: `bridge` (Desktop Bridge CLI: open, wait until ready,
+  screenshot, close — the Store install is found by itself), `modeling` (Authoring MCP client:
+  connect to Desktop's engine, refresh, DAX), `session` (both together; Desktop is always closed,
+  even on errors). The agent's tools will reuse it.
+- `fidelity/numeric.py` (1b): for each reference number in the expectations (`values`, written
+  as Tableau displays them), the matching field bound in the emitted visual becomes a DAX
+  expression; one query per sheet; compared at Tableau's displayed precision ("29" accepts
+  28.5–29.5).
+- `fidelity/visual.py` (1c): the model gets the Tableau image (the user's screenshot, else the
+  embedded thumbnail) and the Desktop screenshot, and scores a fixed rubric (chart type, fields,
+  date granularity, colour, layout, title) plus 0–10. One structured call per sheet.
+
+**Results on Book1** (structural unchanged at 45/62):
+
+| | numeric | visual (avg) |
+|---|---|---|
+| migrated without the LLM | 4/9 | 3.2/10 |
+| migrated with the LLM (`--llm`) | 7/9 | 4.3/10 |
+
+Every plain aggregation matched Tableau exactly at display precision; with the LLM, all three
+translated calculations did too (Profit per order 28.67 → "29", Sales per Customer 2,908.17 →
+"2,908", profit ratio 0.1256 → "0"). The two misses are the known count-of-table gap.
+
+**What the judge is and isn't good for.** It confirmed the known gaps (missing colour split,
+titles, unstacked areas, the tooltip page) and found one nobody had written down: the tooltip
+bars are sorted the wrong way (Tableau ascending, ours descending). But it called the daily area
+charts "monthly" in both runs — Power BI's axis labels are monthly even when the points are daily —
+while flagging the same chart correctly once. Run-to-run it isn't fully consistent either. So it
+stays advisory: good at "what's visibly different", not to be trusted on details the structural
+and numeric layers check exactly.
+
+**Two traps found building it.** `mcp>=1.30` let pip install 2.3, which renamed
+`CallToolResult.isError` to `is_error`; both are handled now and the range is capped `<3`. And
+the MCP server writes its whole startup log to stderr, now sent to `os.devnull` (it keeps its own
+audit log on disk).
+
+---
+
 ## 2026-11-26 — Settings in .env; reasoning models reject temperature 0; provider errors surfaced
 
 **Settings.** Local settings and secrets live in a gitignored `.env` (template `.env.example`),

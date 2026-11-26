@@ -18,6 +18,8 @@ dependencies = [
     "azure-identity>=1.17",
     # Reads local settings and secrets from a gitignored .env file (see .env.example).
     "python-dotenv>=1.0",
+    # Client for Microsoft's Power BI Authoring MCP server (t2pbi.desktop); tested with 1.30 and 2.3.
+    "mcp>=1.30,<3",
 ]
 
 [project.optional-dependencies]

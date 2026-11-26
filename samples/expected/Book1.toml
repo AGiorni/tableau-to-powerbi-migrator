@@ -30,11 +30,27 @@ fields = [
     "Sales per Customer:measure",
     "profit ratio:measure",
 ]
+# Numbers as Tableau displays them (KPI screenshot); checked by --render at that precision.
+values."Orders:rowcount" = "10,194"
+values."Returns:rowcount" = "296"
+values."Discount:avg" = "15.54%"
+values."Profit:sum" = "$292,296.81"
+values."Profit per order:measure" = "29"
+values."Quantity:sum" = "38,654"
+values."Sales:sum" = "$2,326,534.35"
+values."Sales per Customer:measure" = "2,908"
+values."profit ratio:measure" = "0"
 known_gaps."title" = "custom worksheet titles are not migrated (the sheet name is used)"
 known_gaps."fields[Orders:rowcount]" = "Tableau's count-of-table fields (Count of Orders) are dropped"
 known_gaps."fields[Returns:rowcount]" = "Tableau's count-of-table fields (Count of Returns) are dropped"
+known_gaps."value[Orders:rowcount]" = "Tableau's count-of-table fields (Count of Orders) are dropped"
+known_gaps."value[Returns:rowcount]" = "Tableau's count-of-table fields (Count of Returns) are dropped"
+known_gaps."value[Profit per order:measure]" = "calculated fields stay BLANK() without the LLM (run with --llm)"
+known_gaps."value[Sales per Customer:measure]" = "calculated fields stay BLANK() without the LLM (run with --llm)"
+known_gaps."value[profit ratio:measure]" = "calculated fields stay BLANK() without the LLM (run with --llm)"
 notes = [
     "Not checked: number formats (currency for Profit and Sales, % for Avg. Discount, whole numbers).",
+    "profit ratio shows as 0 in Tableau (no decimals), so its value check is loose (anything in ±0.5).",
 ]
 
 [[sheet]]

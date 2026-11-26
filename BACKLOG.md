@@ -24,15 +24,13 @@ now, GitHub Actions for CI, and an agent that edits PBIR/TMDL files directly. In
    - [x] *1a. Structural* *(done 2026-11-25)*: `src/t2pbi/fidelity/`, `samples/expected/Book1.toml`,
      `scripts/fidelity.py`, ratchet test; checked against the user's Tableau screenshots in
      `samples/reference/Book1/`. Baseline: Book1 **45/62 (73%)**, all 17 failures known gaps.
-   - [ ] *1b. Numeric* (DAX through the Authoring MCP server against Desktop). Reference values
-     for Book1 are in the KPI screenshot: Count of Orders 10,194, Count of Returns 296, Avg.
-     Discount 15.54%, Profit $292,296.81, Profit per order 29, Quantity 38,654, Sales
-     $2,326,534.35, Sales per Customer 2,908.
-   - [ ] *1c. Visual* (Desktop Bridge screenshots against Tableau references, LLM-as-judge).
-     References are **screenshots the user supplies once per workbook** (one PNG per sheet,
-     named after it — `samples/reference/<workbook>/`, later a `t2pbi migrate
-     --reference-images <folder>` option), falling back to the workbook's embedded 192px
-     thumbnails when none are given. Same mechanism for the yardstick and for the app.
+   - [x] *1b. Numeric* *(done 2026-11-26)*: `scripts/fidelity.py --render`, values queried in
+     Desktop through the Authoring MCP server against the KPI screenshot's numbers. Book1: 4/9
+     without the LLM, 7/9 with it.
+   - [x] *1c. Visual* *(done 2026-11-26)*: Desktop screenshots against the user's Tableau
+     screenshots (fallback: embedded thumbnails), judged by the model on a fixed rubric. Book1:
+     3.2/10 without the LLM, 4.3/10 with it. Advisory only (see DEVLOG). Still to do for the app:
+     a `t2pbi migrate --reference-images <folder>` option.
 2. [x] **`validate_tmdl` node** *(done 2026-11-25)*. `tools/tmdl-validate` (.NET 8, TOM
    `TmdlSerializer`) prints JSON diagnostics; `validate/tmdl_cli.py` wraps it; the graph runs
    `assemble → validate_tmdl → validate_pbir`, each skipped with an INFO issue when its tool is
@@ -58,6 +56,13 @@ doesn't diff every file.
   Desktop instance are available, `dax_query_operations Validate` catches unknown columns and
   real syntax errors that `validate/dax.py`'s bracket check misses; feed its message back to the
   LLM on the `repair` route, keeping the bracket check as the offline fallback.
+- [ ] **The visual judge misses date granularity.** *(seen 2026-11-26)* It called Book1's daily
+  area charts "monthly" in both runs (Power BI's axis labels are monthly even when the points are
+  daily). Options: tell it to judge granularity by the number of points, or leave granularity to
+  the structural layer, which checks it exactly.
+- [ ] **A blank panel in Book1's "Sales by segment" small multiples.** *(seen 2026-11-26, not yet
+  investigated)* The Desktop screenshot shows a fourth, unlabelled panel below the three segments
+  — probably rows with an empty Segment. Tableau shows three.
 - [ ] **The LLM visual router hides provider errors.** *(verified 2026-11-26)*
   `LLMVisualRouter._ask` in [visual_router_llm.py](src/t2pbi/mapping/visual_router_llm.py)
   returns None on any exception, so a failed call looks like "resolved by default" in the report.
@@ -119,7 +124,8 @@ doesn't diff every file.
   `sort_descending` defaults to `True` in [visual_decision.py](src/t2pbi/mapping/visual_decision.py)
   and is never set from the input; [visual_mapper.py](src/t2pbi/mapping/visual_mapper.py) only
   picks the sort *field* (the first measure). A gap since the shelf-aware mapping work on
-  2026-08-28.
+  2026-08-28. Visible in Book1: the tooltip sheet sorts cities ascending by profit ratio, ours
+  descending (the visual judge spotted it, 2026-11-26).
 
 - [ ] **Unsupported connection kinds emit an empty-table stub.** *(verified 2026-11-24)* Only
   `textscan` (CSV), `excel-direct`, `sqlserver`, `postgres` and `mysql` produce real Power Query.

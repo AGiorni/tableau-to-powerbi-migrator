@@ -19,6 +19,7 @@ Field specs are short strings:
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,6 +54,37 @@ class FieldSpec:
         return f"{self.name}:{self.qualifier}" if self.qualifier else self.name
 
 
+@dataclass(frozen=True)
+class Reference:
+    """A number as Tableau displayed it, and how far off a value may be while still matching.
+
+    The tolerance is half a unit of the last digit shown: ``"29"`` accepts 28.5–29.5, ``"15.54%"``
+    accepts 0.15535–0.15545. Thousands separators and currency symbols are ignored.
+    """
+
+    text: str
+    value: float
+    tolerance: float
+
+    @classmethod
+    def parse(cls, text: str) -> Reference:
+        cleaned = re.sub(r"[\s,$€£]", "", text)
+        percent = cleaned.endswith("%")
+        number = cleaned.rstrip("%")
+        decimals = len(number.split(".", 1)[1]) if "." in number else 0
+        try:
+            value = float(number)
+        except ValueError:
+            raise ValueError(f"not a number: {text!r}") from None
+        tolerance = 0.5 * 10**-decimals
+        if percent:
+            value, tolerance = value / 100, tolerance / 100
+        return cls(text=text, value=value, tolerance=tolerance)
+
+    def accepts(self, actual: float) -> bool:
+        return abs(actual - self.value) <= self.tolerance + 1e-12
+
+
 @dataclass
 class SheetExpectation:
     name: str
@@ -65,6 +97,9 @@ class SheetExpectation:
     fields: list[FieldSpec] = field(default_factory=list)
     contains: list[str] = field(default_factory=list)
     slicers: list[FieldSpec] = field(default_factory=list)
+    # Reference numbers as Tableau displays them ("10,194", "15.54%"), per field spec: the
+    # sheet's grand total of that field. Checked by fidelity.numeric against the running model.
+    values: dict[FieldSpec, str] = field(default_factory=dict)
     known_gaps: dict[str, str] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
@@ -92,7 +127,7 @@ def load_expectations(path: str | Path) -> WorkbookExpectations:
 
 _SHEET_KEYS = {
     "name", "kind", "page", "title", "visual", "roles", "fields", "contains", "slicers",
-    "known_gaps", "notes",
+    "values", "known_gaps", "notes",
 }
 
 
@@ -110,11 +145,17 @@ def _parse_sheet(raw: dict) -> SheetExpectation:
         fields=[FieldSpec.parse(f) for f in raw.get("fields", [])],
         contains=list(raw.get("contains", [])),
         slicers=[FieldSpec.parse(f) for f in raw.get("slicers", [])],
+        values={FieldSpec.parse(k): str(v) for k, v in raw.get("values", {}).items()},
         known_gaps=dict(raw.get("known_gaps", {})),
         notes=list(raw.get("notes", [])),
     )
     if sheet.kind not in ("worksheet", "tooltip", "dashboard"):
         raise ValueError(f"sheet {sheet.name!r}: unknown kind {sheet.kind!r}")
+    for spec, text in sheet.values.items():
+        try:
+            Reference.parse(text)
+        except ValueError as exc:
+            raise ValueError(f"sheet {sheet.name!r}: values[{spec}]: {exc}") from None
     for vt in sheet.visual_types:
         if vt not in VISUAL_CATALOG:
             raise ValueError(f"sheet {sheet.name!r}: visual type {vt!r} is not in the visual catalog")
