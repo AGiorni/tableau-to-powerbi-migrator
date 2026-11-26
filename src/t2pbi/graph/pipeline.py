@@ -11,8 +11,12 @@
            [no_llm]               -> flag_untranslated     -> map_visuals
            [nothing_to_translate] -> map_visuals
       -> map_visuals -> validate_model -> assemble
-           [validate] -> validate_tmdl -> validate_pbir -> END
+           [validate] -> validate_tmdl -> validate_pbir
+                            [refine] -> prepare_workspace -> assess -> END
+                            [done]   -> END
            [skip]     -> END
+
+Refinement (``--refine``) so far builds the work list; the agent loop after ``assess`` comes next.
 
 New stages are new nodes; new decisions are new conditional edges. Keep loops and gates in the
 graph, not inside nodes, so they stay visible (``build_graph().get_graph().draw_mermaid()``) and
@@ -60,6 +64,8 @@ def build_graph() -> MigrationGraph:
     graph.add_node("assemble", nodes.assemble)
     graph.add_node("validate_tmdl", nodes.validate_tmdl)
     graph.add_node("validate_pbir", nodes.validate_pbir)
+    graph.add_node("prepare_workspace", nodes.prepare_workspace)
+    graph.add_node("assess", nodes.assess)
 
     graph.add_edge(START, "ingest")
     graph.add_edge("ingest", "map_model")
@@ -87,7 +93,13 @@ def build_graph() -> MigrationGraph:
         {"validate": "validate_tmdl", "skip": END},
     )
     graph.add_edge("validate_tmdl", "validate_pbir")
-    graph.add_edge("validate_pbir", END)
+    graph.add_conditional_edges(
+        "validate_pbir",
+        nodes.route_refine,
+        {"refine": "prepare_workspace", "done": END},
+    )
+    graph.add_edge("prepare_workspace", "assess")
+    graph.add_edge("assess", END)
 
     return graph.compile()
 

@@ -27,7 +27,10 @@ graph TD
     assemble -.->|validate| validate_tmdl
     assemble -.->|skip| END([end])
     validate_tmdl --> validate_pbir
-    validate_pbir --> END
+    validate_pbir -.->|refine| prepare_workspace
+    validate_pbir -.->|done| END
+    prepare_workspace --> assess
+    assess --> END
 ```
 
 Dotted edges are decisions made by a router at run time. Regenerate the exact diagram from the
@@ -86,3 +89,7 @@ Run a migration (deterministic path, no LLM calls):
 ```powershell
 t2pbi migrate .\samples\input\Book1.twb --out .\out --no-llm --report .\out\report.json
 ```
+
+With `--refine` (needs Azure OpenAI), the output folder becomes a git repository with the first
+pass as its baseline commit, and the report lists what's still wrong on each page — the work list
+for the refinement agent (in progress).

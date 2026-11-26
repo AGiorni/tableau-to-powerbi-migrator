@@ -10,17 +10,22 @@ label; the labels are mapped to nodes in :mod:`t2pbi.graph.pipeline`.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from langgraph.runtime import Runtime
 
 from t2pbi.emit import assemble_pbip
+from t2pbi.fidelity import read_project, score_structural
+from t2pbi.fidelity.derived import derive_expectations
 from t2pbi.graph.state import MigrationContext, MigrationState
 from t2pbi.ingest import load_workbook
 from t2pbi.mapping import expression_translator, model_mapper, visual_mapper
 from t2pbi.mapping.report import IssueSeverity, MigrationReport
 from t2pbi.mapping.visual_router_llm import LLMVisualRouter
 from t2pbi.parse import parse_workbook
+from t2pbi.refine.worklist import build_work_list
+from t2pbi.refine.workspace import Workspace
 from t2pbi.validate import model_validate, tmdl_cli
 from t2pbi.validate.pbir_cli import iter_findings, run_pbir_validation
 
@@ -249,6 +254,41 @@ def validate_pbir(state: MigrationState) -> dict:
     return {"issues": report.issues}
 
 
+def prepare_workspace(state: MigrationState) -> dict:
+    """Turn the written project into a git repository with the first pass as its baseline commit,
+    so every refinement is a reviewable, reversible commit on top."""
+
+    assert state.pbip_path is not None
+    baseline = Workspace(state.pbip_path).init()
+    report = MigrationReport()
+    report.add(
+        IssueSeverity.INFO, "refine", "workspace",
+        f"Project is a git repository; first-pass baseline is commit {baseline}.",
+    )
+    return {"refine_baseline": baseline, "issues": report.issues}
+
+
+def assess(state: MigrationState) -> dict:
+    """Build the work list: what's wrong with each page, from checks derived from the workbook and
+    from problems already in the report. No hand-written expectations are needed."""
+
+    assert state.workbook is not None and state.pbip_path is not None
+    project = read_project(Path(state.pbip_path).parent)
+    expected = derive_expectations(state.workbook, Path(state.input_path).name)
+    items = build_work_list(score_structural(expected, project), state.issues, project)
+
+    report = MigrationReport()
+    if not items:
+        report.add(IssueSeverity.INFO, "refine", "work list", "Nothing to refine: every derived check passes.")
+    for item in items:
+        report.add(
+            IssueSeverity.INFO, "refine", item.page,
+            f"To refine: {len(item.problems)} problem(s).",
+            detail="; ".join(f"{p.check}: {p.detail}" for p in item.problems),
+        )
+    return {"work_items": items, "issues": report.issues}
+
+
 # --------------------------------------------------------------------------------------------
 # Routers
 # --------------------------------------------------------------------------------------------
@@ -256,6 +296,7 @@ def validate_pbir(state: MigrationState) -> dict:
 ExpressionRoute = Literal["translate", "no_llm", "nothing_to_translate"]
 RepairRoute = Literal["repair", "done"]
 OutputValidationRoute = Literal["validate", "skip"]
+RefineRoute = Literal["refine", "done"]
 
 
 def route_expressions(
@@ -281,3 +322,10 @@ def route_output_validation(
     """After assembly: run the external validators (TMDL, then PBIR) unless the run disabled them."""
 
     return "validate" if runtime.context.run_output_validation else "skip"
+
+
+def route_refine(state: MigrationState, runtime: Runtime[MigrationContext]) -> RefineRoute:
+    """After validation: refine only when asked to and an LLM is configured."""
+
+    context = runtime.context
+    return "refine" if context.refine and context.chat_model is not None else "done"

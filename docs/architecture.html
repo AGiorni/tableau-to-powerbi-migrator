@@ -176,7 +176,7 @@ html { scroll-behavior: smooth; }
   </div>
   <figure>
     <div class="frame">
-      <svg class="d" viewBox="0 0 880 1096" role="img" aria-label="The CLI builds a MigrationContext and invokes the graph. ingest, then map_model. A router after map_model picks translate, no_llm or nothing_to_translate. translate_expressions calls Azure OpenAI, then validate_expressions either loops back on the repair route or continues on done to map_visuals. flag_untranslated and the nothing_to_translate route also lead to map_visuals, which may call the LLM for unmatched sheets and checks roles against the visual catalog. Then validate_model, assemble, and a router that either runs validate_tmdl and validate_pbir through Microsoft's checkers or skips to the end.">
+      <svg class="d" viewBox="0 0 880 1290" role="img" aria-label="The CLI builds a MigrationContext and invokes the graph. ingest, then map_model. A router after map_model picks translate, no_llm or nothing_to_translate. translate_expressions calls Azure OpenAI, then validate_expressions either loops back on the repair route or continues on done to map_visuals. flag_untranslated and the nothing_to_translate route also lead to map_visuals, which may call the LLM for unmatched sheets and checks roles against the visual catalog. Then validate_model, assemble, and a router that either runs validate_tmdl and validate_pbir through Microsoft's checkers or skips to the end. With --refine and an LLM, a router after validate_pbir then runs prepare_workspace (the project becomes a git repository) and assess (the work list).">
         <defs>
           <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-fg"/></marker>
           <marker id="ahm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-muted"/></marker>
@@ -263,7 +263,7 @@ html { scroll-behavior: smooth; }
         <text class="t-desc" x="252" y="762">write TMDL + PBIR, UTF-8, no BOM</text>
         <line class="ln-route" x1="380" y1="776" x2="380" y2="830" marker-end="url(#aha)"/>
         <text class="t-route" x="390" y="807">validate</text>
-        <path class="ln-route" d="M236 760 H160 V1052 H234" marker-end="url(#aha)"/>
+        <path class="ln-route" d="M236 760 H160 V1244 H234" marker-end="url(#aha)"/>
         <text class="t-route" x="168" y="905">skip</text>
 
         <!-- validate_tmdl -->
@@ -276,12 +276,26 @@ html { scroll-behavior: smooth; }
         <rect class="box" x="236" y="928" width="288" height="56" rx="6"/>
         <text class="t-name" x="252" y="950">validate_pbir</text>
         <text class="t-desc" x="252" y="970">Microsoft's PBIR validator → issues</text>
-        <line class="ln" x1="380" y1="984" x2="380" y2="1022" marker-end="url(#ah)"/>
+        <line class="ln-route" x1="380" y1="984" x2="380" y2="1022" marker-end="url(#aha)"/>
+        <text class="t-route" x="390" y="1007">refine</text>
+        <path class="ln-route" d="M524 972 H566 V1244 H526" marker-end="url(#aha)"/>
+        <text class="t-route" x="574" y="1110">done</text>
+
+        <!-- refinement (--refine) -->
+        <rect class="box" x="236" y="1024" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="1046">prepare_workspace</text>
+        <text class="t-desc" x="252" y="1066">project → git repo, baseline commit</text>
+        <line class="ln" x1="380" y1="1080" x2="380" y2="1118" marker-end="url(#ah)"/>
+        <rect class="box" x="236" y="1120" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="1142">assess</text>
+        <text class="t-desc" x="252" y="1162">work list: derived checks + report</text>
+        <line class="ln" x1="380" y1="1176" x2="380" y2="1214" marker-end="url(#ah)"/>
+        <text class="t-lab" x="390" y="1199">agent loop here next (step 4.4)</text>
 
         <!-- END -->
-        <rect class="box-out" x="236" y="1024" width="288" height="56" rx="6"/>
-        <text class="t-name" x="252" y="1046">END → MigrationResult</text>
-        <text class="t-desc" x="252" y="1066">&lt;name&gt;.pbip + issues · <tspan class="t-warn">exit code always 0</tspan></text>
+        <rect class="box-out" x="236" y="1216" width="288" height="56" rx="6"/>
+        <text class="t-name" x="252" y="1238">END → MigrationResult</text>
+        <text class="t-desc" x="252" y="1258">&lt;name&gt;.pbip + issues · <tspan class="t-warn">exit code always 0</tspan></text>
 
         <!-- issues note -->
         <rect class="rail" x="16" y="616" width="128" height="80" rx="6"/>
@@ -328,7 +342,7 @@ html { scroll-behavior: smooth; }
       <span><i class="chip out"></i>what the user gets</span>
       <span style="color:var(--warn)">red text = surprise</span>
     </div>
-    <figcaption>The topology is <span class="mono">build_graph()</span> in <span class="mono">graph/pipeline.py</span>; nodes and routers are in <span class="mono">graph/nodes.py</span>. With <span class="mono">--no-llm</span> or no <span class="mono">T2PBI_AZURE_OPENAI_ENDPOINT</span>, the <span class="mono">no_llm</span> route skips translation and <span class="mono">map_visuals</span> uses the deterministic router. The repair loop stops after <span class="mono">max_translation_attempts</span> (default 2); anything still rejected becomes an ERROR and stays <span class="mono">BLANK()</span>. After <span class="mono">assemble</span>, <span class="mono">validate_tmdl</span> and <span class="mono">validate_pbir</span> check the written files with Microsoft's own tools; each is skipped with an INFO issue when its tool isn't installed, and <span class="mono">--no-validate</span> skips both. A missing or malformed workbook raises in <span class="mono">ingest</span> and stops the run.</figcaption>
+    <figcaption>The topology is <span class="mono">build_graph()</span> in <span class="mono">graph/pipeline.py</span>; nodes and routers are in <span class="mono">graph/nodes.py</span>. With <span class="mono">--no-llm</span> or no <span class="mono">T2PBI_AZURE_OPENAI_ENDPOINT</span>, the <span class="mono">no_llm</span> route skips translation and <span class="mono">map_visuals</span> uses the deterministic router. The repair loop stops after <span class="mono">max_translation_attempts</span> (default 2); anything still rejected becomes an ERROR and stays <span class="mono">BLANK()</span>. After <span class="mono">assemble</span>, <span class="mono">validate_tmdl</span> and <span class="mono">validate_pbir</span> check the written files with Microsoft's own tools; each is skipped with an INFO issue when its tool isn't installed, and <span class="mono">--no-validate</span> skips both. With <span class="mono">--refine</span> (needs the LLM), the project becomes a git repository and <span class="mono">assess</span> lists what's wrong per page, from checks derived from the workbook and the report; the agent that fixes it arrives in step 4.4. A missing or malformed workbook raises in <span class="mono">ingest</span> and stops the run.</figcaption>
   </figure>
 </section>
 
@@ -611,7 +625,7 @@ python scripts\snapshot_outputs.py compare a.json b.json</pre>
 </section>
 
 <footer>
-  Checked against <span class="mono">main</span> after step 4.1 (derived expectations), 26 Nov 2026. If the code has moved since, trust the code, and update this map.
+  Checked against <span class="mono">main</span> after step 4.2 (refine: workspace + assess), 26 Nov 2026. If the code has moved since, trust the code, and update this map.
 </footer>
 
 </div>

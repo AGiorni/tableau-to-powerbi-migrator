@@ -37,15 +37,29 @@ def main(argv: list[str] | None = None) -> int:
         "--report",
         help="Optional path to write the migration report as JSON.",
     )
+    migrate_cmd.add_argument(
+        "--refine",
+        action="store_true",
+        help="After the first pass, let the refinement agent fix what it got wrong "
+        "(needs Azure OpenAI; the project folder becomes a git repository, one commit per fix).",
+    )
 
     args = parser.parse_args(argv)
     return args.handler(args)
 
 
 def _run_migrate(args: argparse.Namespace) -> int:
+    if args.refine and (args.no_llm or args.no_validate):
+        print("--refine needs the LLM and validation: drop --no-llm / --no-validate.", file=sys.stderr)
+        return 2
+    chat_model = None if args.no_llm else build_chat_model()
+    if args.refine and chat_model is None:
+        print("--refine needs Azure OpenAI (T2PBI_AZURE_OPENAI_* in .env).", file=sys.stderr)
+        return 2
     context = MigrationContext(
-        chat_model=None if args.no_llm else build_chat_model(),
+        chat_model=chat_model,
         run_output_validation=not args.no_validate,
+        refine=args.refine,
     )
     result = migrate(args.input, args.out, context)
 

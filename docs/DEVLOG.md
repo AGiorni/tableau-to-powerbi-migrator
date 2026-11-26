@@ -9,6 +9,32 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-26 — Step 4.2: the work list and the git workspace
+
+**Shape agreed for the agent** (user, 2026-11-26): deterministic nodes hand the agent its work
+and judge the result; the agent only proposes. `assess` → `pick_item` → `fix_item` (agent, one
+page, fresh short conversation, typed tools) → `review_item` (validators and derived checks as
+hard gates, the visual judge as a must-not-drop soft gate) → commit, or revert and retry once
+with the reason — the same shape as the DAX repair loop, every loop a conditional edge.
+
+**This increment** builds the first half. `t2pbi migrate --refine` (needs the LLM and
+validation) adds, after `validate_pbir`, `prepare_workspace` → `assess`:
+
+- *Workspace.* The output folder becomes a git repository; the first pass is the baseline
+  commit. Only the project's own files are tracked (`<name>.pbip`, `.Report`, `.SemanticModel`,
+  `.gitignore`) — never other files in the folder. Commits use a neutral `t2pbi` identity and
+  `core.autocrlf=false`, passed per command so the user's git configuration is never touched, and
+  every command refuses to run until the workspace's own `.git` exists, because otherwise git would
+  happily act on an enclosing repository (in development, t2pbi's own).
+- *Work list.* One item per page, not per check: fixes on one visual interact. Sources: derived
+  checks, report issues for the page (an untranslated measure becomes a problem on every page that
+  shows it), and, from 4.4, the visual judge. Pages with the most problems first.
+
+On Book1 with the LLM: baseline commit of the project's 32 files, 15 problems on 4 pages. Until the
+agent exists, `assess` writes the list into the report and the run ends.
+
+---
+
 ## 2026-11-26 — Step 4 begins: expectations derived from the workbook (the agent's eyes)
 
 **Decisions for step 4** (user, 2026-11-26): Book1's known gaps are the agent's training ground

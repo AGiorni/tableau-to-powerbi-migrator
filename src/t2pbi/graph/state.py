@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from t2pbi.ir.powerbi_ir import PBIModel, PBIReportPage
 from t2pbi.ir.tableau_ir import TableauCalculatedField, TableauWorkbook
 from t2pbi.mapping.report import MigrationIssue
+from t2pbi.refine.worklist import WorkItem
 
 
 class MigrationState(BaseModel):
@@ -54,6 +55,11 @@ class MigrationState(BaseModel):
     # assemble
     pbip_path: str | None = None
 
+    # Refinement (only with MigrationContext.refine). The project's git baseline commit, and what's
+    # still wrong, one item per page (replaced by every assess pass).
+    refine_baseline: str | None = None
+    work_items: list[WorkItem] = Field(default_factory=list)
+
     # Every node may append; the reducer concatenates instead of overwriting.
     issues: Annotated[list[MigrationIssue], operator.add] = Field(default_factory=list)
 
@@ -69,3 +75,8 @@ class MigrationContext:
     run_output_validation: bool = True
     # Translate passes per calculated field: the first attempt plus repairs.
     max_translation_attempts: int = 2
+    # After validation, let the refinement agent fix what the first pass got wrong (needs
+    # chat_model and validation on; Power BI Desktop for the review). Off by default.
+    refine: bool = False
+    # Most pages the agent works on in one run.
+    max_refine_items: int = 10

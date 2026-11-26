@@ -44,6 +44,8 @@ def test_graph_shape():
         "assemble",
         "validate_tmdl",
         "validate_pbir",
+        "prepare_workspace",
+        "assess",
         "__end__",
     }
     edges = {(e.source, e.target, e.data, e.conditional) for e in graph.edges}
@@ -56,6 +58,9 @@ def test_graph_shape():
     assert ("assemble", "validate_tmdl", "validate", True) in edges
     assert ("assemble", "__end__", "skip", True) in edges
     assert ("validate_tmdl", "validate_pbir", None, False) in edges
+    assert ("validate_pbir", "prepare_workspace", "refine", True) in edges
+    assert ("validate_pbir", "__end__", "done", True) in edges
+    assert ("prepare_workspace", "assess", None, False) in edges
 
 
 def test_no_llm_path(superstore_twb, tmp_path):
@@ -154,3 +159,30 @@ def test_route_expressions():
     assert nodes.route_expressions(empty, with_llm) == "nothing_to_translate"
     assert nodes.route_expressions(pending, no_llm) == "no_llm"
     assert nodes.route_expressions(pending, with_llm) == "translate"
+
+
+def test_route_refine():
+    state = MigrationState(input_path="x", out_dir="y")
+    assert nodes.route_refine(state, SimpleNamespace(context=MigrationContext())) == "done"
+    asked_no_llm = SimpleNamespace(context=MigrationContext(refine=True))
+    assert nodes.route_refine(state, asked_no_llm) == "done"  # the graph completes without an LLM
+    asked = SimpleNamespace(context=MigrationContext(refine=True, chat_model=object()))
+    assert nodes.route_refine(state, asked) == "refine"
+
+
+def test_refine_builds_a_workspace_and_a_work_list(book1_twb, tmp_path, monkeypatch, fake_chat):
+    monkeypatch.setattr(nodes, "run_pbir_validation", lambda _path: None)
+    monkeypatch.setattr(nodes.tmdl_cli, "run_tmdl_validation", lambda _path: None)
+    context = MigrationContext(chat_model=fake_chat("BLANK()"), refine=True, max_translation_attempts=1)
+
+    visited, state = _run(book1_twb, tmp_path, context)
+
+    assert visited[-2:] == ["prepare_workspace", "assess"]
+    assert (tmp_path / ".git").is_dir() and state.refine_baseline
+    pages = {item.page: item for item in state.work_items}
+    # From the workbook alone (no oracle): the known Book1 gaps show up as work.
+    assert "fields[Order Date:month]" in {p.check for p in pages["Sales by Category"].problems}
+    assert "tooltip-page" in {p.check for p in pages["Tooltip: Profit Ratio by City"].problems}
+    # Untranslated calcs are problems on the pages that show them.
+    assert any(p.check == "report:measure[profit ratio]" for p in pages["Tooltip: Profit Ratio by City"].problems)
+    assert any(i.stage == "refine" and i.message.startswith("To refine") for i in state.issues)

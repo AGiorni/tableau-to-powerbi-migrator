@@ -44,8 +44,10 @@ now, GitHub Actions for CI, and an agent that edits PBIR/TMDL files directly. In
    - [x] *4.1 Derived expectations* *(done 2026-11-26)*: parser reads titles, viz-in-tooltip
      links and sorts; `fidelity/derived.py` builds coverage checks from any workbook; `sort`
      structural check. Book1 baseline now 45/63.
-   - [ ] *4.2 Work list and workspace*: `assess` node, git repo in the output folder,
-     `--refine` flag.
+   - [x] *4.2 Work list and workspace* *(done 2026-11-26)*: `refine/worklist.py` (one item per
+     page from derived checks, report issues and, later, the judge), `refine/workspace.py` (git
+     repo in the output folder, project files only), `prepare_workspace` → `assess` nodes,
+     `t2pbi migrate --refine`. Book1: 15 problems on 4 pages.
    - [ ] *4.3 Edit tools*: typed PBIR edits, each validated then committed or reverted.
    - [ ] *4.4 Agent loop*: model + Desktop session across the run; before/after fidelity.
    - [ ] *4.5 Model-side tools*: measures and columns through the MCP server.
