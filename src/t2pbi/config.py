@@ -60,6 +60,9 @@ class AzureOpenAIConfig:
     # None = don't send a temperature (the model's own default). Reasoning models (o-series,
     # gpt-5 family) reject anything but their default, so they need None.
     temperature: float | None = 0.0
+    # Call the Responses API instead of Chat Completions. Reasoning models take tool calls (the
+    # refinement agent) only there; needs API version 2025-03-01-preview or later.
+    use_responses_api: bool = False
 
     @property
     def is_configured(self) -> bool:
@@ -74,7 +77,17 @@ def load_azure_openai_config() -> AzureOpenAIConfig:
         api_version=_setting("T2PBI_AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
         api_key=_setting("T2PBI_AZURE_OPENAI_API_KEY") or None,
         temperature=_temperature(_setting("T2PBI_AZURE_OPENAI_TEMPERATURE", "0")),
+        use_responses_api=_flag("T2PBI_AZURE_OPENAI_RESPONSES_API"),
     )
+
+
+def _flag(name: str) -> bool:
+    raw = _setting(name, "false").strip().lower()
+    if raw in ("1", "true", "yes"):
+        return True
+    if raw in ("0", "false", "no"):
+        return False
+    raise ValueError(f"{name} must be true or false, got {raw!r}")
 
 
 def _temperature(raw: str) -> float | None:

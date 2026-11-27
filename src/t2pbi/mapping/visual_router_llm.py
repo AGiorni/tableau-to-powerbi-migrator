@@ -13,6 +13,7 @@ import json
 from typing import Any
 
 from t2pbi.ir.powerbi_ir import PBIFieldRef
+from t2pbi.llm import message_text
 from t2pbi.mapping.visual_catalog import VISUAL_CATALOG, enforce_wells
 from t2pbi.mapping.visual_decision import DecisionSource, DefaultRouter, MappingDecision
 
@@ -92,8 +93,8 @@ class LLMVisualRouter:
             )
         except Exception:  # noqa: BLE001 - degrade gracefully on any provider error
             return None
-        content = getattr(response, "content", None)
-        if not isinstance(content, str):
+        content = message_text(response)
+        if not content:
             return None
         return _parse(content, index)
 

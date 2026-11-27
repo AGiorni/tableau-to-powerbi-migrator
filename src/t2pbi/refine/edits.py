@@ -36,6 +36,15 @@ from t2pbi.mapping.visual_catalog import VISUAL_CATALOG
 # Power BI Desktop's size for a report-page tooltip.
 _TOOLTIP_SIZE = (320, 240)
 
+# Visual types in the catalog that Microsoft is retiring, with what to use instead. The Bing-based
+# Map and Filled map are scheduled for deprecation in favour of Azure Maps, which draws filled
+# (choropleth) regions as a layer (learn.microsoft.com, "Convert Map and Filled map visuals to an
+# Azure Maps visual"). The visual judge only sees pictures, so it can't be the one to stop these.
+_RETIRING = {
+    "map": "azureMap",
+    "filledMap": "azureMap (its filled-map layer draws shaded regions)",
+}
+
 
 class EditError(ValueError):
     """The edit was refused; the message says why and what to do instead."""
@@ -98,6 +107,19 @@ class ReportEditor:
             "sort": sort,
         }
 
+    def overview(self, page: str) -> dict:
+        """Every visual on a page, slicers included, each as :meth:`describe` shows it."""
+
+        page_json, page_raw = self._page(page)
+        names = [json.loads(p.read_text(encoding="utf-8")).get("name")
+                 for p in sorted(page_json.parent.glob("visuals/*/visual.json"))]
+        visuals = [self.describe(page, name) for name in names if name]
+        return {
+            "page": page,
+            "page_type": page_raw.get("type"),
+            "visuals": [{k: v for k, v in d.items() if k not in ("page", "page_type")} for d in visuals],
+        }
+
     def model_fields(self) -> dict[str, dict[str, list[str]]]:
         """Table -> its columns and measures, as the agent may bind them."""
 
@@ -113,6 +135,10 @@ class ReportEditor:
         spec = VISUAL_CATALOG.get(visual_type)
         if spec is None:
             raise EditError(f"unknown visual type {visual_type!r}; it must be a type in the visual catalog")
+        if visual_type in _RETIRING:
+            raise EditError(
+                f"{visual_type!r} is being retired by Microsoft (Bing Maps); use {_RETIRING[visual_type]}"
+            )
         t = self._target(page, visual)
         body = t.visual["visual"]
         old = body.get("visualType")
@@ -246,15 +272,15 @@ class ReportEditor:
 
     # ---------------------------------------------------------------- internals
 
-    def _target(self, page: str, visual: str | None, allow_any: bool = False) -> _Target:
-        page_json = None
+    def _page(self, page: str) -> tuple[Path, dict]:
         for path in sorted(self.pages_dir.glob("*/page.json")):
             raw = json.loads(path.read_text(encoding="utf-8"))
             if raw.get("displayName") == page:
-                page_json, page_raw = path, raw
-                break
-        if page_json is None:
-            raise EditError(f"no page named {page!r}; pages are {self.page_names()}")
+                return path, raw
+        raise EditError(f"no page named {page!r}; pages are {self.page_names()}")
+
+    def _target(self, page: str, visual: str | None, allow_any: bool = False) -> _Target:
+        page_json, page_raw = self._page(page)
         candidates = []
         for path in sorted(page_json.parent.glob("visuals/*/visual.json")):
             raw = json.loads(path.read_text(encoding="utf-8"))

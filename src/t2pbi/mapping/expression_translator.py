@@ -14,7 +14,7 @@ from typing import Any
 
 from t2pbi.ir.powerbi_ir import PBIModel
 from t2pbi.ir.tableau_ir import TableauCalculatedField
-from t2pbi.llm import provider_error_message
+from t2pbi.llm import message_text, provider_error_message
 from t2pbi.mapping.model_mapper import UNTRANSLATED_DAX
 from t2pbi.validate import validate_dax
 
@@ -98,8 +98,7 @@ def translate_calc(
         )
     except Exception as exc:  # noqa: BLE001 - degrade gracefully on any provider error
         return Translation(None, provider_error_message(exc))
-    content = getattr(response, "content", None)
-    return Translation(clean_dax(content if isinstance(content, str) else None))
+    return Translation(clean_dax(message_text(response) or None))
 
 
 def check_dax(dax: str | None, model: PBIModel) -> DaxCheck:

@@ -1,8 +1,8 @@
-# Structural expectations for samples/input/Book1.twb.
+# Structural expectations for samples/Book1/Book1.twb.
 #
 # What each Tableau sheet shows, stated as a faithful Power BI report would show it — the truth,
 # not what t2pbi produces today. Read from the workbook XML and checked against the reference
-# screenshots in samples/reference/Book1/ (taken in Tableau, shelves visible). Field-spec syntax
+# screenshots in samples/Book1/screenshots/ (taken in Tableau, shelves visible). Field-spec syntax
 # and check ids: src/t2pbi/fidelity/expectations.py.
 #
 # known_gaps: checks t2pbi fails today, each with the reason (all tracked in BACKLOG.md). The test

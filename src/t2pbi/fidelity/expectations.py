@@ -1,8 +1,8 @@
 """Hand-reviewed expectations: what each Tableau sheet shows, stated in Power BI terms.
 
-One TOML file per sample workbook in ``samples/expected/``. Each ``[[sheet]]`` describes one
-Tableau worksheet or dashboard as a faithful Power BI report would show it — the truth, not what
-t2pbi produces today. Checks that t2pbi is known to fail are listed under ``known_gaps`` with the
+One TOML file per sample workbook, ``samples/<workbook>/expected.toml``. Each ``[[sheet]]``
+describes one Tableau worksheet or dashboard as a faithful Power BI report would show it — the
+truth, not what t2pbi produces today. Checks that t2pbi is known to fail are listed under ``known_gaps`` with the
 reason, so the score shows both progress and regressions.
 
 Field specs are short strings:

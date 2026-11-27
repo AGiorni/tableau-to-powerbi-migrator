@@ -4,7 +4,7 @@
     python scripts/snapshot_outputs.py snap after.json       # on the new revision
     python scripts/snapshot_outputs.py compare before.json after.json
 
-Every sample in ``samples/input`` is migrated three ways: with no LLM; with a fake LLM whose first
+Every sample workbook (``samples/<name>/<name>.twb``) is migrated three ways: with no LLM; with a fake LLM whose first
 DAX answer per formula is broken (forcing the repair loop) and whose visual-router answers are
 valid; and with a fake LLM whose router answers are garbage (forcing the fallback). Every emitted
 file and every report issue is recorded. Random ids (page/visual folder names, GUIDs) are masked
@@ -26,7 +26,7 @@ from types import SimpleNamespace
 
 from t2pbi.graph import MigrationContext, migrate
 
-_SAMPLES = Path(__file__).resolve().parents[1] / "samples" / "input"
+_SAMPLES = Path(__file__).resolve().parents[1] / "samples"
 _IDS = re.compile(
     r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\b[0-9a-f]{20}\b"
 )
@@ -71,7 +71,7 @@ def _normalize(out_dir: Path, issues) -> dict:
 def snapshot() -> dict:
     runs = {"nollm": lambda: None, "llm": lambda: _FakeChat(True), "badrouter": lambda: _FakeChat(False)}
     snap = {}
-    for workbook in sorted(_SAMPLES.glob("*.twb")):
+    for workbook in sorted(_SAMPLES.glob("*/*.twb")):
         for label, make_chat in runs.items():
             out = Path(tempfile.mkdtemp())
             context = MigrationContext(chat_model=make_chat(), run_output_validation=False)

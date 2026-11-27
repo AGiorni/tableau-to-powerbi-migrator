@@ -3,14 +3,15 @@
     python scripts/fidelity.py                    # structural only: fast, no Desktop, as in CI
     python scripts/fidelity.py Book1 --render     # + numbers and pictures through Power BI Desktop
     python scripts/fidelity.py Book1 --render --llm   # migrate with the LLM too (DAX translation)
+    python scripts/fidelity.py Book1 --refine         # + the refinement agent; scores what it kept
 
 Migrates each workbook through the normal graph (``migrate()``), then scores the emitted project:
 
-- structural — pages, visual types, field bindings, against ``samples/expected/<name>.toml``;
+- structural — pages, visual types, field bindings, against ``samples/<name>/expected.toml``;
 - numeric (``--render``) — the visuals' values, queried in Power BI Desktop, against Tableau's
   numbers in the same file;
 - visual (``--render``, needs Azure OpenAI) — each page's Desktop screenshot judged by the model
-  against the Tableau screenshot in ``samples/reference/<name>/`` (or the embedded thumbnail).
+  against the Tableau screenshots in ``samples/<name>/screenshots/``; sheets without any are skipped.
 
 Writes ``<out>/fidelity.json`` and prints the scores. This is an evaluator, not a second migration
 runner. Exit code 1 only on structural regressions (the CI-checked layer); numeric and visual
@@ -30,16 +31,14 @@ from pathlib import Path
 from t2pbi.config import load_env_file
 from t2pbi.fidelity import load_expectations, read_project, score_structural
 from t2pbi.fidelity.derived import derive_expectations
-from t2pbi.fidelity.references import extract_thumbnails, find_reference_image
+from t2pbi.fidelity.references import match_screenshots
 from t2pbi.graph import MigrationContext, migrate
 from t2pbi.ingest import load_workbook
 from t2pbi.llm import build_chat_model
 from t2pbi.parse import parse_workbook
 
 _ROOT = Path(__file__).resolve().parents[1]
-_EXPECTED = _ROOT / "samples" / "expected"
-_INPUT = _ROOT / "samples" / "input"
-_REFERENCES = _ROOT / "samples" / "reference"
+_SAMPLES = _ROOT / "samples"  # one folder per workbook: <name>.twb, expected.toml, screenshots/
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -53,12 +52,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Also check numbers and pictures in Power BI Desktop (Windows; needs the tools and Desktop).",
     )
     parser.add_argument(
+        "--refine", action="store_true",
+        help="Migrate with refinement (implies --llm): the agent fixes pages, then the result is scored.",
+    )
+    parser.add_argument(
         "--derived", action="store_true",
         help="Also score against expectations derived from the workbook itself (what the agent sees).",
     )
     args = parser.parse_args(argv)
 
-    names = args.workbooks or sorted(p.stem for p in _EXPECTED.glob("*.toml"))
+    names = args.workbooks or sorted(p.parent.name for p in _SAMPLES.glob("*/expected.toml"))
+    args.llm = args.llm or args.refine
     chat = build_chat_model() if (args.llm or args.render) else None
     if args.llm and chat is None:
         print("--llm given but no Azure OpenAI configured (T2PBI_AZURE_OPENAI_*).", file=sys.stderr)
@@ -68,21 +72,35 @@ def main(argv: list[str] | None = None) -> int:
     report: dict = {}
     regressions = 0
     for name in names:
-        expected = load_expectations(_EXPECTED / f"{name}.toml")
+        expected = load_expectations(_SAMPLES / name / "expected.toml")
         project_dir = out_root / name
+        references = _SAMPLES / name / "screenshots"
         result = migrate(
-            _INPUT / expected.workbook,
+            _SAMPLES / name / expected.workbook,
             project_dir,
-            MigrationContext(chat_model=chat if args.llm else None, run_output_validation=False),
+            MigrationContext(
+                chat_model=chat if args.llm else None,
+                run_output_validation=args.refine,  # refinement runs after validation
+                refine=args.refine,
+                reference_images=str(references) if references.is_dir() else None,
+            ),
         )
+        if args.refine:
+            print(f"\n{name}: refinement")
+            for issue in result.report.issues:
+                if issue.stage == "refine":
+                    print(f"  [{issue.object_name}] {issue.message}" + (f" ({issue.detail})" if issue.detail else ""))
         project = read_project(project_dir)
         structural = score_structural(expected, project)
-        regressions += sum(r.outcome in ("fail", "fixed") for r in structural)
+        # A known gap that passes ("fixed") fails the first-pass ratchet, so the expectations get
+        # updated; after refinement, fixing known gaps is the point.
+        flagged = ("fail",) if args.refine else ("fail", "fixed")
+        regressions += sum(r.outcome in flagged for r in structural)
         report[name] = {"structural": _summarize(structural)}
         _print_checks(f"{name}: structural fidelity", structural)
 
         if args.derived:
-            workbook = parse_workbook(load_workbook(_INPUT / expected.workbook))
+            workbook = parse_workbook(load_workbook(_SAMPLES / name / expected.workbook))
             derived = score_structural(derive_expectations(workbook, expected.workbook), project)
             report[name]["derived"] = _summarize(derived)
             _print_checks(f"{name}: structural fidelity, derived expectations (no oracle)", derived)
@@ -113,15 +131,20 @@ async def _render(name, expected, project, pbip_path, work_dir: Path, chat):
         numeric = await score_numeric(expected, project, desktop.query)
         shots = desktop.screenshot_pages(work_dir / "powerbi")
 
-    thumbnails = extract_thumbnails(_INPUT / expected.workbook, work_dir / "thumbnails")
+    references = match_screenshots(_SAMPLES / name / "screenshots", [sheet.name for sheet in expected.sheets])
     verdicts = []
     for sheet in expected.sheets:
-        reference = find_reference_image(_REFERENCES / name, sheet.name) or thumbnails.get(sheet.name)
+        reference = references.images.get(sheet.name)
         shot = shots.get(sheet.page_name)
         if chat is None or reference is None or shot is None:
-            why = "no Azure OpenAI configured" if chat is None else (
-                "no Tableau reference image" if reference is None else "no Power BI page to screenshot"
-            )
+            if chat is None:
+                why = "no Azure OpenAI configured"
+            elif sheet.name in references.ambiguous:
+                why = f"several screenshot folders match it ({', '.join(references.ambiguous[sheet.name])})"
+            elif reference is None:
+                why = f"no Tableau screenshots in samples/{name}/screenshots/"
+            else:
+                why = "no Power BI page to screenshot"
             verdicts.append(VisualVerdict(sheet=sheet.name, reference="", error=f"skipped: {why}"))
             continue
         verdicts.append(judge_sheet(chat, sheet, reference, shot))

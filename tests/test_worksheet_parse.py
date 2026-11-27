@@ -36,7 +36,7 @@ def test_shelf_splits_nested_fields():
 def test_worksheet_parse_book1_if_present(tmp_path):
     from pathlib import Path
 
-    book1 = Path(__file__).resolve().parents[1] / "samples" / "input" / "Book1.twb"
+    book1 = Path(__file__).resolve().parents[1] / "samples" / "Book1" / "Book1.twb"
     if not book1.exists():
         return  # sample optional
 

@@ -13,7 +13,7 @@ import pytest
 from t2pbi.graph import MigrationContext, migrate
 from t2pbi.mapping.report import IssueSeverity
 
-_SAMPLES = sorted((Path(__file__).resolve().parents[1] / "samples" / "input").glob("*.twb"))
+_SAMPLES = sorted((Path(__file__).resolve().parents[1] / "samples").glob("*/*.twb"))
 _VALIDATOR_STAGES = ("tmdl", "pbir")
 
 

@@ -1,18 +1,31 @@
-"""Reference images: how each Tableau sheet looks, for visual fidelity checks.
+"""Reference images: the user's screenshots of each Tableau sheet, for visual fidelity checks.
 
-The user supplies screenshots once per workbook — one PNG per worksheet or dashboard, named after
-it. People name files loosely, so names are matched ignoring case, spaces and punctuation
-("Tooltip: Profit Ratio by City" finds ``tooltip profit ratio by city.png``). Without a
-screenshot, the small thumbnails Tableau embeds in the workbook are the fallback.
+The screenshots folder has one subfolder per worksheet or dashboard, named after it, holding one
+or more images of that sheet: the whole view, and if useful close-ups (a legend, a hovered
+tooltip). A future upload wizard writes the same layout::
+
+    screenshots/
+      Sales by Category/
+        view.png
+        legend.png
+      Tooltip_ Profit Ratio by City/
+        view.png
+
+People (and file systems: ``:`` isn't allowed on Windows) name folders loosely, so names are
+matched ignoring case, spaces and punctuation: ``Tooltip_ Profit Ratio by City`` is the folder of
+"Tooltip: Profit Ratio by City".
+
+A sheet without a folder, or with an empty one, isn't compared with a picture at all. The
+thumbnails Tableau embeds in a workbook are not used: at 192px or less, titles, labels and date
+levels can't be read, so they gave the judge too little to score on (DEVLOG, 2026-11-27).
 """
 
 from __future__ import annotations
 
-import base64
 import re
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 from pathlib import Path
-
-from t2pbi.ingest import load_workbook
 
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 
@@ -23,36 +36,39 @@ def normalize_name(name: str) -> str:
     return re.sub(r"[^0-9a-z]", "", name.lower())
 
 
-def find_reference_image(folder: str | Path, sheet_name: str) -> Path | None:
-    """The image in ``folder`` for ``sheet_name``, or None. Raises if two files match."""
+@dataclass
+class Screenshots:
+    """A screenshots folder matched to a workbook's sheets."""
 
-    root = Path(folder)
-    if not root.is_dir():
-        return None
-    key = normalize_name(sheet_name)
-    hits = [
-        p
-        for p in root.iterdir()
-        if p.suffix.lower() in _IMAGE_SUFFIXES and normalize_name(p.stem) == key
-    ]
-    if len(hits) > 1:
-        raise ValueError(f"several reference images match {sheet_name!r}: {[p.name for p in hits]}")
-    return hits[0] if hits else None
+    images: dict[str, list[Path]] = field(default_factory=dict)  # sheet -> its images, by file name
+    ambiguous: dict[str, list[str]] = field(default_factory=dict)  # sheet -> the folders that all match it
+    unmatched: list[str] = field(default_factory=list)  # folders named after no sheet
+    loose: list[str] = field(default_factory=list)  # images not in any sheet's folder
 
 
-def extract_thumbnails(workbook: str | Path, out_dir: str | Path) -> dict[str, Path]:
-    """Write the PNG thumbnails Tableau embeds in a workbook (up to 192px); sheet name -> file."""
+def match_screenshots(folder: str | Path | None, sheets: Iterable[str]) -> Screenshots:
+    """Match the subfolders of ``folder`` to ``sheets`` by name and collect their images.
 
-    root = load_workbook(workbook).root
-    out = Path(out_dir)
-    found: dict[str, Path] = {}
-    for thumb in root.iter("thumbnail"):
-        name = thumb.get("name") or ""
-        data = "".join((thumb.text or "").split())
-        if not name or not data:
-            continue
-        out.mkdir(parents=True, exist_ok=True)
-        path = out / f"{re.sub(r'[^0-9A-Za-z -]', '_', name)}.png"
-        path.write_bytes(base64.b64decode(data))
-        found[name] = path
+    A sheet that two folders match gets neither: which one is meant would be a guess. Folders
+    named after no sheet and images lying directly in ``folder`` are listed, since they're most
+    likely misnamed or misplaced.
+    """
+
+    found = Screenshots()
+    if folder is None or not Path(folder).is_dir():
+        return found
+    entries = sorted(Path(folder).iterdir())
+    subfolders = [p for p in entries if p.is_dir()]
+    names = list(sheets)
+    for sheet in names:
+        hits = [p for p in subfolders if normalize_name(p.name) == normalize_name(sheet)]
+        if len(hits) > 1:
+            found.ambiguous[sheet] = [p.name for p in hits]
+        elif hits:
+            images = sorted(p for p in hits[0].iterdir() if p.is_file() and p.suffix.lower() in _IMAGE_SUFFIXES)
+            if images:
+                found.images[sheet] = images
+    keys = {normalize_name(sheet) for sheet in names}
+    found.unmatched = [p.name for p in subfolders if normalize_name(p.name) not in keys]
+    found.loose = [p.name for p in entries if p.is_file() and p.suffix.lower() in _IMAGE_SUFFIXES]
     return found

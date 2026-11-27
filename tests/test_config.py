@@ -85,3 +85,34 @@ def test_bad_temperature_is_a_clear_error(monkeypatch, tmp_path):
     monkeypatch.setenv("T2PBI_AZURE_OPENAI_TEMPERATURE", "cold")
     with pytest.raises(ValueError, match="number or 'default'"):
         load_azure_openai_config()
+
+
+@pytest.mark.parametrize(("raw", "expected"), [("", False), ("true", True), ("1", True), ("False", False)])
+def test_responses_api_setting(raw, expected, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("T2PBI_AZURE_OPENAI_RESPONSES_API", raw)
+    assert load_azure_openai_config().use_responses_api is expected
+
+
+def test_bad_responses_api_setting_is_a_clear_error(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("T2PBI_AZURE_OPENAI_RESPONSES_API", "maybe")
+    with pytest.raises(ValueError, match="true or false"):
+        load_azure_openai_config()
+
+
+def test_message_text_reads_both_answer_shapes():
+    from types import SimpleNamespace
+
+    from t2pbi.llm import message_text
+
+    assert message_text(SimpleNamespace(content="SUM(x)")) == "SUM(x)"  # Chat Completions
+    responses = [  # Responses API: reasoning and tool-call blocks carry no answer text
+        {"type": "reasoning", "summary": []},
+        {"type": "text", "text": "CHANGED: ", "annotations": []},
+        {"type": "text", "text": "set the title"},
+        {"type": "function_call", "name": "x", "arguments": "{}"},
+    ]
+    assert message_text(SimpleNamespace(content=responses)) == "CHANGED: set the title"
+    assert message_text(SimpleNamespace(content=None)) == ""
+    assert message_text(object()) == ""

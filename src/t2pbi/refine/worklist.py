@@ -43,10 +43,22 @@ class WorkItem(BaseModel):
     page: str = Field(description="Report page display name (the Tableau sheet or dashboard name).")
     problems: list[Problem] = Field(default_factory=list)
     attempts: int = 0
+    # Why earlier attempts on this page were rejected; sent back to the agent on a retry.
+    feedback: list[str] = Field(default_factory=list)
 
     @property
     def summary(self) -> str:
         return f"{self.page}: {len(self.problems)} problem(s) — " + "; ".join(p.check for p in self.problems)
+
+
+class RefineOutcome(BaseModel):
+    """What happened to one agent attempt on one page."""
+
+    page: str
+    outcome: str = Field(description="accepted | rejected | unchanged | failed")
+    commit: str | None = None
+    summary: str = Field(default="", description="The agent's own one-line account of its change.")
+    reasons: list[str] = Field(default_factory=list, description="Why the review kept or refused it.")
 
 
 # Report stages whose issues describe a fixable problem on a page.

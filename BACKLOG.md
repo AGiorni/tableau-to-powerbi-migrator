@@ -17,20 +17,20 @@ now, GitHub Actions for CI, and an agent that edits PBIR/TMDL files directly. In
    unattended rendering (after one-time machine setup), data refresh through the Authoring MCP
    server, DAX validation by the engine, and Python/LangGraph driving the server. Details in
    DEVLOG.
-1. [ ] **Fidelity harness.** For each sample: Tableau visuals (embedded thumbnails, or exports
-   when available) and data, the Power BI output rendered through the Desktop Bridge (page PNGs)
+1. [ ] **Fidelity harness.** For each sample: Tableau visuals (the user's screenshots) and data, the Power BI output rendered through the Desktop Bridge (page PNGs)
    and queried with DAX through the Authoring MCP server, and a fidelity score. Comes first:
    without a measurement we can't tell whether the agent helps.
-   - [x] *1a. Structural* *(done 2026-11-25)*: `src/t2pbi/fidelity/`, `samples/expected/Book1.toml`,
+   - [x] *1a. Structural* *(done 2026-11-25)*: `src/t2pbi/fidelity/`, `samples/Book1/expected.toml`,
      `scripts/fidelity.py`, ratchet test; checked against the user's Tableau screenshots in
-     `samples/reference/Book1/`. Baseline: Book1 **45/62 (73%)**, all 17 failures known gaps.
+     `samples/Book1/screenshots/`. Baseline: Book1 **45/62 (73%)**, all 17 failures known gaps.
    - [x] *1b. Numeric* *(done 2026-11-26)*: `scripts/fidelity.py --render`, values queried in
      Desktop through the Authoring MCP server against the KPI screenshot's numbers. Book1: 4/9
      without the LLM, 7/9 with it.
    - [x] *1c. Visual* *(done 2026-11-26)*: Desktop screenshots against the user's Tableau
-     screenshots (fallback: embedded thumbnails), judged by the model on a fixed rubric. Book1:
-     3.2/10 without the LLM, 4.3/10 with it. Advisory only (see DEVLOG). Still to do for the app:
-     a `t2pbi migrate --reference-images <folder>` option.
+     screenshots, judged by the model on a fixed rubric. Book1: 3.2/10 without the LLM, 4.3/10
+     with it. Advisory only (see DEVLOG). The app option `t2pbi migrate --reference-images
+     <folder>` came with 4.4. Embedded thumbnails are no longer a fallback (2026-11-27): a sheet
+     without a user screenshot isn't judged.
 2. [x] **`validate_tmdl` node** *(done 2026-11-25)*. `tools/tmdl-validate` (.NET 8, TOM
    `TmdlSerializer`) prints JSON diagnostics; `validate/tmdl_cli.py` wraps it; the graph runs
    `assemble → validate_tmdl → validate_pbir`, each skipped with an INFO issue when its tool is
@@ -52,13 +52,18 @@ now, GitHub Actions for CI, and an agent that edits PBIR/TMDL files directly. In
      fields, set visual type, bind / remove a field, set title, set sort, make a tooltip page and
      link it from its host visual. Checked against the catalog and the model; the edited Book1
      report passes both validators. Committing or reverting is the review step's job (4.4).
-   - [ ] *4.4 Agent loop*: model + Desktop session across the run; before/after fidelity.
-   - [ ] *4.5 Model-side tools*: measures and columns through the MCP server.
+   - [x] *4.4 Agent loop* *(done 2026-11-26)*: `open_desktop` → `assess` (with the visual
+     judge) → `pick_item` → `fix_item` (agent, `create_agent`) → `review_item` (commit, or
+     revert + one retry) → `finalize_refine`; `--reference-images`, `--no-desktop`. Book1
+     before/after in DEVLOG.
+   - [ ] *4.5 Model-side tools*: measures and columns through the MCP server — the date level
+     (`Order Date:month`), row counts (`Orders:rowcount`) and the dimension calc on the colour
+     shelf (`Order Profitable?`) are now most of what the agent reports it can't fix.
 
    Original description: A tool-using agent inside the graph that works through
    report issues and fidelity gaps on the baseline `.pbip`. Tools: edit PBIR/TMDL files, the
    Authoring MCP server, `powerbi-report-author validate`, Desktop Bridge reload and screenshot,
-   Tableau thumbnails. Keeps a change only if it validates and fidelity doesn't drop; one git
+   the user's Tableau screenshots. Keeps a change only if it validates and fidelity doesn't drop; one git
    commit per change; bounded by a budget.
 
 Supporting work, to be designed with step 4: a structured `diagnostics` field in the state (the
@@ -71,10 +76,34 @@ doesn't diff every file.
   Desktop instance are available, `dax_query_operations Validate` catches unknown columns and
   real syntax errors that `validate/dax.py`'s bracket check misses; feed its message back to the
   LLM on the `repair` route, keeping the bracket check as the offline fallback.
+- [ ] **A page screenshot can fail right after a reload.** *(seen 2026-11-26)* Once, on
+  "profit ratio by geography" after the agent made it a filled map: `BRIDGE_ERROR: Report canvas
+  capture metadata is not ready` (clip height 0), even with the CLI's own 120 s retry budget. The
+  review then had no picture and, the item being judge-only, refused the change — safe, but a
+  possibly good change was lost. Find out whether filled maps render at all in this Desktop
+  (map visuals can be disabled in Options › Security) before adding a retry.
+- [ ] **Edits can leave a required role empty.** *(seen 2026-11-26)* The agent switched a visual
+  to `stackedAreaChart` without its required `Category`; the PBIR validator caught it and the
+  review refused the change. `set_visual_type` / `remove_field` could say so at once (the
+  catalog knows the required roles), saving the agent a refused attempt.
 - [ ] **The visual judge misses date granularity.** *(seen 2026-11-26)* It called Book1's daily
   area charts "monthly" in both runs (Power BI's axis labels are monthly even when the points are
   daily). Options: tell it to judge granularity by the number of points, or leave granularity to
-  the structural layer, which checks it exactly.
+  the structural layer, which checks it exactly. Yet in the refinement runs (one page screenshot at a time, same
+  deployment) it flagged the finer date level correctly; the cause is unknown — compare the two
+  paths before changing the rubric.
+- [ ] **A setup wizard for a new migration (front end, later).** *(raised 2026-11-27)* When the
+  user starts a migration: upload the workbook, see the list of its sheets and dashboards (read
+  from the Tableau IR), and upload screenshots per sheet — several allowed — with the missing
+  ones shown before the run starts. It writes the layout the graph already reads
+  (`screenshots/<sheet>/*.png`, see `samples/README.md`), so the graph needs no change. A place
+  for a human-in-the-loop chat later. Open: whether to ask for hidden worksheets (used only inside
+  dashboards or tooltips) too.
+- [ ] **Book1's data lives outside the repo.** *(verified 2026-11-27)* `Book1.twb` reads
+  `sample_-_superstore.xls` from an absolute path in one developer's Downloads folder, and the
+  migrated model's `File.Contents` points at the same path, so rendering Book1 (`--render`,
+  `--refine`) works only on that machine. Option: commit the public Superstore file under `samples/Book1/data/`
+  and point the workbook there — check Tableau's terms for redistributing it first.
 - [ ] **A blank panel in Book1's "Sales by segment" small multiples.** *(seen 2026-11-26, not yet
   investigated)* The Desktop screenshot shows a fourth, unlabelled panel below the three segments
   — probably rows with an empty Segment. Tableau shows three.
@@ -183,9 +212,10 @@ doesn't diff every file.
 
 ## Open questions
 
-- [ ] **Is `reference_pbip/` a fixture or scratch?** It is gitignored but present in the working
-  tree. If tests or a contributor would want it as a reference for Desktop-parity output, it
-  should be tracked; if it is scratch, leave it ignored and say so here.
+- [x] **Is `reference_pbip/` a fixture or scratch?** *(resolved 2026-11-27)* Scratch: a blank
+  project saved by Power BI Desktop in August, read by no code or test. Deleted, with its
+  `.gitignore` line. Microsoft's validators now check our output's format, so there's no need
+  for a Desktop-made reference; if one is ever wanted, File › Save as `.pbip` recreates it.
 
 - [ ] **How should an apostrophe in a PBIR string literal be escaped?** Our writer doubles it
   (`'O''Neil'`, as in DAX), but `powerbi-report-author expr encode --kind string` returns

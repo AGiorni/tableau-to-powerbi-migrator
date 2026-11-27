@@ -29,8 +29,16 @@ graph TD
     validate_tmdl --> validate_pbir
     validate_pbir -.->|refine| prepare_workspace
     validate_pbir -.->|done| END
-    prepare_workspace --> assess
-    assess --> END
+    prepare_workspace -.->|desktop| open_desktop
+    prepare_workspace -.->|checks_only| assess
+    open_desktop --> assess
+    assess -.->|work| pick_item
+    assess -.->|done| finalize_refine
+    pick_item --> fix_item
+    fix_item --> review_item
+    review_item -.->|work| pick_item
+    review_item -.->|done| finalize_refine
+    finalize_refine --> END
 ```
 
 Dotted edges are decisions made by a router at run time. Regenerate the exact diagram from the
@@ -55,9 +63,10 @@ Working end to end on the sample workbooks:
   serializer for the model and `powerbi-report-author validate` for the report; diagnostics land
   in the migration report.
 - **Fidelity** — `scripts/fidelity.py` scores how faithfully the samples are migrated, against
-  hand-reviewed expectations in `samples/expected/`: structure (in CI), and with `--render` the
-  numbers (queried in Power BI Desktop) and the pictures (an LLM compares Desktop screenshots with
-  Tableau screenshots in `samples/reference/`).
+  hand-reviewed expectations in `samples/<workbook>/expected.toml`: structure (in CI), and with
+  `--render` the numbers (queried in Power BI Desktop) and the pictures (an LLM compares Desktop
+  screenshots with Tableau screenshots in `samples/<workbook>/screenshots/`). The samples and
+  their layout are described in [samples/README.md](samples/README.md).
 
 Open work is in [BACKLOG.md](BACKLOG.md); the reasoning behind past decisions is in
 [docs/DEVLOG.md](docs/DEVLOG.md). For a visual map of the pipeline, open
@@ -87,9 +96,26 @@ dotnet publish tools\tmdl-validate -c Release -o tools\tmdl-validate\bin\publish
 Run a migration (deterministic path, no LLM calls):
 
 ```powershell
-t2pbi migrate .\samples\input\Book1.twb --out .\out --no-llm --report .\out\report.json
+t2pbi migrate .\samples\Book1\Book1.twb --out .\out --no-llm --report .\out\report.json
 ```
 
-With `--refine` (needs Azure OpenAI), the output folder becomes a git repository with the first
-pass as its baseline commit, and the report lists what's still wrong on each page — the work list
-for the refinement agent (in progress).
+With `--refine` (needs Azure OpenAI, with a deployment that takes tool calls and images), a
+refinement agent then fixes what the first pass got wrong, one page at a time:
+
+```powershell
+t2pbi migrate .\samples\Book1\Book1.twb --out .\out --refine --reference-images .\samples\Book1\screenshots
+```
+
+- The output folder becomes a git repository: the first pass is the baseline commit, and every
+  change the agent makes that is kept is one more commit (`git log`, `git diff` to review it).
+- The work list comes from checks derived from the workbook, problems in the report and — with
+  Power BI Desktop — a visual judge comparing each page with your screenshots of the Tableau sheet
+  (`--reference-images`: one folder per sheet, named after it, with one or more images). Pages
+  without screenshots aren't compared with a picture; without the option, Desktop isn't opened.
+  The small thumbnails Tableau stores in the workbook are not used: too little detail to judge by.
+- The agent edits the report through typed tools only; a deterministic review keeps a change only
+  if Microsoft's validators stay clean, no check that passed breaks, and the page improves.
+  Otherwise the change is reverted and the page gets one retry with the reasons.
+- Desktop needs the Desktop Bridge (`npm ci` in `tools/`) and the Authoring MCP's EULA accepted
+  by you (`PBI_MODELING_MCP_ACCEPT_EULA=true`) to load the data; without them, or with
+  `--no-desktop`, the review uses the checks alone.

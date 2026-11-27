@@ -43,6 +43,18 @@ def main(argv: list[str] | None = None) -> int:
         help="After the first pass, let the refinement agent fix what it got wrong "
         "(needs Azure OpenAI; the project folder becomes a git repository, one commit per fix).",
     )
+    migrate_cmd.add_argument(
+        "--reference-images",
+        metavar="DIR",
+        help="With --refine: your Tableau screenshots for the visual judge, one subfolder per "
+        "sheet named after it, holding one or more images. Only pages with screenshots are "
+        "compared with a picture; without this option, none is (and Power BI Desktop isn't opened).",
+    )
+    migrate_cmd.add_argument(
+        "--no-desktop",
+        action="store_true",
+        help="With --refine: don't open Power BI Desktop; review changes with the checks alone.",
+    )
 
     args = parser.parse_args(argv)
     return args.handler(args)
@@ -60,6 +72,8 @@ def _run_migrate(args: argparse.Namespace) -> int:
         chat_model=chat_model,
         run_output_validation=not args.no_validate,
         refine=args.refine,
+        use_desktop=not args.no_desktop,
+        reference_images=args.reference_images,
     )
     result = migrate(args.input, args.out, context)
 

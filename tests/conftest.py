@@ -1,4 +1,4 @@
-"""Shared test fixtures: the sample workbooks, a mapping shortcut, a fake chat model, and the
+"""Shared test fixtures: the sample workbooks, a mapping shortcut, fake chat models, and the
 ``external`` marker for tests that need Microsoft's tools.
 
 ``@pytest.mark.external("powerbi-report-author", "tmdl-validate")`` skips a test when a named tool
@@ -12,8 +12,13 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from pydantic import Field
 
 from t2pbi.ingest import load_workbook
 from t2pbi.mapping.model_mapper import MappingResult, map_model
@@ -21,7 +26,7 @@ from t2pbi.mapping.report import MigrationReport
 from t2pbi.parse import parse_workbook
 from t2pbi.toolchain import find_dotnet_tool, find_node_tool
 
-SAMPLES = Path(__file__).resolve().parents[1] / "samples" / "input"
+SAMPLES = Path(__file__).resolve().parents[1] / "samples"  # one folder per workbook
 
 # How to find each external tool a test may ask for.
 _TOOL_FINDERS = {
@@ -51,17 +56,17 @@ def pytest_runtest_setup(item):
 
 @pytest.fixture
 def superstore_twb() -> Path:
-    return SAMPLES / "superstore.twb"
+    return SAMPLES / "superstore" / "superstore.twb"
 
 
 @pytest.fixture
 def sales_sql_twb() -> Path:
-    return SAMPLES / "sales_sql.twb"
+    return SAMPLES / "sales_sql" / "sales_sql.twb"
 
 
 @pytest.fixture
 def book1_twb() -> Path:
-    return SAMPLES / "Book1.twb"
+    return SAMPLES / "Book1" / "Book1.twb"
 
 
 @pytest.fixture
@@ -103,3 +108,58 @@ def fake_chat() -> type[FakeChat]:
     """The :class:`FakeChat` class, so tests can build one without importing conftest."""
 
     return FakeChat
+
+
+class ScriptedAgentChat(BaseChatModel):
+    """A chat model that plays the refinement agent from a script, one entry per agent run.
+
+    Each run's script is a list of steps: ``(tool_name, args)`` makes a tool call, a list of such
+    pairs makes several calls in one message (as real models do), a string is the final answer.
+    Calls outside the agent (DAX translation, visual routing) get an empty answer, as from a model
+    that can't help, so the deterministic fallbacks apply.
+    """
+
+    scripts: list[list[Any]]
+    briefs: list[str] = Field(default_factory=list)
+    tool_results: list[str] = Field(default_factory=list)
+    _run: int = 0
+    _step: int = 0
+
+    @property
+    def _llm_type(self) -> str:
+        return "scripted"
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        from t2pbi.refine.agent import SYSTEM_PROMPT
+
+        is_agent = bool(messages) and isinstance(messages[0], SystemMessage) and messages[0].content == SYSTEM_PROMPT
+        if not is_agent:
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=""))])
+        if not any(isinstance(m, AIMessage) for m in messages):  # a new agent run
+            self._run, self._step = self._run + 1, 0
+            self.briefs.append(messages[1].content[0]["text"])
+        else:
+            last_ai = max(i for i, m in enumerate(messages) if isinstance(m, AIMessage))
+            self.tool_results.extend(str(m.content) for m in messages[last_ai + 1:] if m.type == "tool")
+        script = self.scripts[self._run - 1] if self._run <= len(self.scripts) else ["NO CHANGE: no script"]
+        step = script[min(self._step, len(script) - 1)]
+        self._step += 1
+        if isinstance(step, str):
+            message = AIMessage(content=step)
+        else:
+            calls = step if isinstance(step, list) else [step]
+            message = AIMessage(content="", tool_calls=[
+                {"name": name, "args": args, "id": f"c{self._run}.{self._step}.{i}"}
+                for i, (name, args) in enumerate(calls)
+            ])
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+@pytest.fixture
+def scripted_agent_chat() -> type[ScriptedAgentChat]:
+    """The :class:`ScriptedAgentChat` class."""
+
+    return ScriptedAgentChat

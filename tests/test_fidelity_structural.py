@@ -14,18 +14,18 @@ import pytest
 from t2pbi.fidelity import FieldSpec, load_expectations, read_project, score_structural
 from t2pbi.fidelity.expectations import WorkbookExpectations, _parse_sheet
 from t2pbi.fidelity.project import Page, Project, Visual
-from t2pbi.fidelity.references import find_reference_image
+from t2pbi.fidelity.references import match_screenshots
 from t2pbi.fidelity.structural import matches
 from t2pbi.graph import MigrationContext, migrate
 
 _ROOT = Path(__file__).resolve().parents[1]
-_EXPECTATION_FILES = sorted((_ROOT / "samples" / "expected").glob("*.toml"))
+_EXPECTATION_FILES = sorted((_ROOT / "samples").glob("*/expected.toml"))
 
 
-@pytest.mark.parametrize("expectations", _EXPECTATION_FILES, ids=lambda p: p.stem)
+@pytest.mark.parametrize("expectations", _EXPECTATION_FILES, ids=lambda p: p.parent.name)
 def test_sample_fidelity_matches_expectations(expectations, tmp_path):
     expected = load_expectations(expectations)
-    migrate(_ROOT / "samples" / "input" / expected.workbook, tmp_path, MigrationContext(run_output_validation=False))
+    migrate(expectations.parent / expected.workbook, tmp_path, MigrationContext(run_output_validation=False))
 
     results = score_structural(expected, read_project(tmp_path))
 
@@ -65,21 +65,42 @@ def test_unknown_keys_are_rejected():
         _parse_sheet({"name": "s", "visuals": ["tableEx"]})  # typo for "visual"
 
 
-def test_every_book1_sheet_has_a_reference_image():
-    expected = load_expectations(_ROOT / "samples" / "expected" / "Book1.toml")
-    folder = _ROOT / "samples" / "reference" / "Book1"
-    missing = [s.name for s in expected.sheets if find_reference_image(folder, s.name) is None]
-    assert not missing
+def test_every_book1_sheet_has_a_screenshot():
+    expected = load_expectations(_ROOT / "samples" / "Book1" / "expected.toml")
+    shots = match_screenshots(_ROOT / "samples" / "Book1" / "screenshots", [s.name for s in expected.sheets])
+    assert set(shots.images) == {s.name for s in expected.sheets}
+    assert not (shots.ambiguous or shots.unmatched or shots.loose)
 
 
-def test_reference_names_match_loosely(tmp_path):
-    (tmp_path / "tooltip profit ratio by city.png").write_bytes(b"")
-    (tmp_path / "notes.txt").write_text("not an image", encoding="utf-8")
-    assert find_reference_image(tmp_path, "Tooltip: Profit Ratio by City").name == (
-        "tooltip profit ratio by city.png"
-    )
-    assert find_reference_image(tmp_path, "Sales by Category") is None
-    assert find_reference_image(tmp_path / "absent", "x") is None
+def test_screenshots_are_one_folder_per_sheet(tmp_path):
+    files = [
+        "Tooltip_ Profit Ratio by City/view.png",  # ':' isn't allowed in Windows names
+        "Tooltip_ Profit Ratio by City/hover.jpg",
+        "Tooltip_ Profit Ratio by City/notes.txt",  # not an image: ignored
+        "Sales by segment/view.png",
+        "sales_by_segment/view.png",
+        "Sales/view.png",
+        "Sales by Category/.keep",
+        "loose.png",
+    ]
+    for name in files:
+        (tmp_path / name).parent.mkdir(exist_ok=True)
+        (tmp_path / name).write_bytes(b"")
+    sheets = ["Tooltip: Profit Ratio by City", "Sales by segment", "Sales by Category"]
+
+    shots = match_screenshots(tmp_path, sheets)
+
+    # Several images per sheet, in file-name order; names matched ignoring case and punctuation.
+    assert {s: [p.name for p in ps] for s, ps in shots.images.items()} == {
+        "Tooltip: Profit Ratio by City": ["hover.jpg", "view.png"]
+    }
+    # Two folders match: neither is used (which one is meant would be a guess).
+    assert shots.ambiguous == {"Sales by segment": ["Sales by segment", "sales_by_segment"]}
+    assert shots.unmatched == ["Sales"]  # named after no sheet: most likely a typo
+    assert shots.loose == ["loose.png"]  # not in a sheet's folder
+    # An empty folder is the same as none: "Sales by Category" isn't judged.
+    assert match_screenshots(tmp_path / "absent", sheets) == match_screenshots(None, sheets)
+    assert not match_screenshots(None, sheets).images
 
 
 def test_known_gap_must_name_a_real_check(tmp_path):

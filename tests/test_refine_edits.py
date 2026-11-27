@@ -106,6 +106,7 @@ def test_remove_field_also_drops_a_sort_on_it(book1):
         (lambda e: e.bind_field("Sales by Category", "Category", "Order Date:month"), "needs a model change"),
         (lambda e: e.bind_field("Sales by Category", "Y", "Sales:sum"), "already in role"),
         (lambda e: e.set_visual_type("Sales by Category", "notAVisual"), "unknown visual type"),
+        (lambda e: e.set_visual_type("profit ratio by geography", "filledMap"), "being retired.*use azureMap"),
         (lambda e: e.set_sort(TOOLTIP, "Sales:sum", "ascending"), "doesn't show"),
         (lambda e: e.set_title("Nowhere", "x"), "no page named"),
         (lambda e: e.set_title("Executive Overview", "x"), "several visuals"),

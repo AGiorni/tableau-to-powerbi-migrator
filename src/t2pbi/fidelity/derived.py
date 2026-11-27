@@ -1,6 +1,6 @@
 """Expectations derived from the Tableau workbook itself, for workbooks nobody wrote an oracle for.
 
-At run time a customer's workbook has no hand-reviewed ``samples/expected/*.toml``; this builds
+At run time a customer's workbook has no hand-reviewed ``samples/<workbook>/expected.toml``; this builds
 the checkable part of one straight from the Tableau IR, so the structural scorer can tell the
 refinement agent what's missing. It states **coverage**, never the mapper's choices:
 
@@ -11,7 +11,7 @@ refinement agent what's missing. It states **coverage**, never the mapper's choi
 
 It never states a visual type or which role a field belongs in: those are the mapper's decisions,
 and copying its rules here would only reproduce its blind spots. How close this gets to a
-hand-written oracle is measured against ``samples/expected/Book1.toml`` in the tests.
+hand-written oracle is measured against ``samples/Book1/expected.toml`` in the tests.
 """
 
 from __future__ import annotations

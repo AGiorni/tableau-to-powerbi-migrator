@@ -19,6 +19,22 @@ def provider_error_message(exc: Exception, limit: int = 300) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def message_text(message: Any) -> str:
+    """The text of a model's answer. Chat Completions returns a string; the Responses API returns
+    a list of content blocks (text, reasoning, tool calls), whose text blocks are joined."""
+
+    content = getattr(message, "content", None)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            block if isinstance(block, str) else str(block.get("text", ""))
+            for block in content
+            if isinstance(block, str) or (isinstance(block, dict) and block.get("type") == "text")
+        )
+    return ""
+
+
 def build_chat_model(config: AzureOpenAIConfig | None = None) -> Any | None:
     """Return a configured ``AzureChatOpenAI`` instance, or ``None`` if unavailable."""
 
@@ -37,6 +53,8 @@ def build_chat_model(config: AzureOpenAIConfig | None = None) -> Any | None:
     }
     if config.temperature is not None:  # reasoning models accept only their default
         common["temperature"] = config.temperature
+    if config.use_responses_api:
+        common["use_responses_api"] = True
 
     if config.api_key:
         return AzureChatOpenAI(api_key=config.api_key, **common)

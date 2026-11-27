@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from t2pbi.ir.powerbi_ir import PBIModel, PBIReportPage
 from t2pbi.ir.tableau_ir import TableauCalculatedField, TableauWorkbook
 from t2pbi.mapping.report import MigrationIssue
-from t2pbi.refine.worklist import WorkItem
+from t2pbi.refine.worklist import RefineOutcome, WorkItem
 
 
 class MigrationState(BaseModel):
@@ -55,10 +55,26 @@ class MigrationState(BaseModel):
     # assemble
     pbip_path: str | None = None
 
-    # Refinement (only with MigrationContext.refine). The project's git baseline commit, and what's
-    # still wrong, one item per page (replaced by every assess pass).
+    # Refinement (only with MigrationContext.refine).
+    # prepare_workspace: the project's git baseline commit.
     refine_baseline: str | None = None
+    # open_desktop: the Power BI Desktop process showing the project (None = no pictures), and the
+    # user's Tableau screenshots per page name (pages without any aren't judged).
+    desktop_pid: int | None = None
+    references: dict[str, list[str]] = Field(default_factory=dict)
+    # assess, then kept current by review_item: pages still to work on (one item per page), the
+    # failing derived checks ("<page>::<check>" -> detail) and the judge's score per page.
     work_items: list[WorkItem] = Field(default_factory=list)
+    failing_checks: dict[str, str] = Field(default_factory=dict)
+    failing_at_start: int = 0
+    page_scores: dict[str, int] = Field(default_factory=dict)
+    # pick_item -> fix_item -> review_item: the page being worked on and the agent's account of it.
+    current_item: WorkItem | None = None
+    agent_summary: str = ""
+    agent_error: str | None = None
+    # Items picked so far (retries included), compared with MigrationContext.max_refine_items.
+    refine_picks: int = 0
+    refine_log: list[RefineOutcome] = Field(default_factory=list)
 
     # Every node may append; the reducer concatenates instead of overwriting.
     issues: Annotated[list[MigrationIssue], operator.add] = Field(default_factory=list)
@@ -78,5 +94,13 @@ class MigrationContext:
     # After validation, let the refinement agent fix what the first pass got wrong (needs
     # chat_model and validation on; Power BI Desktop for the review). Off by default.
     refine: bool = False
-    # Most pages the agent works on in one run.
+    # Agent runs in one refinement (a retry of a refused page counts), and model calls per run.
     max_refine_items: int = 10
+    max_agent_steps: int = 15
+    # Open Power BI Desktop during refinement to screenshot pages and have the judge compare them
+    # with the user's Tableau screenshots. Off (or Desktop missing), the review uses the checks alone.
+    use_desktop: bool = True
+    # The user's Tableau screenshots: one subfolder per sheet, named after it, with one or more
+    # images (t2pbi.fidelity.references). Only pages with some are compared with a picture;
+    # without any, Desktop isn't opened.
+    reference_images: str | None = None

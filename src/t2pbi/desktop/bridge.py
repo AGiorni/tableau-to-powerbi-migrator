@@ -19,6 +19,8 @@ from t2pbi.fidelity.references import normalize_name
 from t2pbi.toolchain import command, find_node_tool
 
 _CLI = "powerbi-desktop"
+# Desktop processes this Python process launched, so they can always be closed (close_all).
+_LAUNCHED: set[int] = set()
 
 
 class BridgeError(RuntimeError):
@@ -84,6 +86,7 @@ def open_report(pbip: Path, timeout: float = 180.0) -> int:
     pid = payload.get("pid") or payload.get("launched", {}).get("launchedProcessId")
     if not pid:
         raise BridgeError(f"powerbi-desktop open returned no process id: {payload}")
+    _LAUNCHED.add(int(pid))
     return int(pid)
 
 
@@ -130,9 +133,36 @@ def screenshot_all(pid: int, out_dir: Path, scale: float = 1.0, settle_ms: int =
     return shots
 
 
+def screenshot_page(pid: int, page_id: str, out_path: Path, scale: float = 1.0) -> Path:
+    """Capture one page (by its PBIR page id) as a PNG at ``out_path``."""
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    _run(
+        "screenshot", page_id, "--pid", str(pid), "--output", str(out_path), "--scale", str(scale),
+        "--wait-seconds", "120", timeout=300,
+    )
+    if not out_path.is_file():
+        raise BridgeError(f"no screenshot was written to {out_path}")
+    return out_path
+
+
+def reload(pid: int) -> None:
+    """Make Desktop re-read the project from disk (after files changed); loaded data is kept."""
+
+    _run("reload", "--pid", str(pid), "--wait-seconds", "120", timeout=300)
+
+
 def close(pid: int) -> None:
     """Stop the Desktop process (and its engine) that this run launched."""
 
     subprocess.run(
         ["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=60, check=False
     )
+    _LAUNCHED.discard(pid)
+
+
+def close_all() -> None:
+    """Close every Desktop this process launched and hasn't closed yet (cleanup after failures)."""
+
+    for pid in list(_LAUNCHED):
+        close(pid)

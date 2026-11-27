@@ -35,6 +35,15 @@ class DesktopSession:
         return bridge.screenshot_all(self.pid, out_dir)
 
 
+async def load_data(pbip: Path) -> None:
+    """Refresh the model of the Desktop window showing ``pbip`` (a freshly written project opens
+    empty). The data stays loaded after the modeling server disconnects, and across reloads."""
+
+    async with ModelingServer(read_write=True) as server:
+        await server.connect_desktop(window_title=Path(pbip).stem)
+        await server.refresh()
+
+
 @asynccontextmanager
 async def desktop_session(pbip: Path, refresh: bool = True) -> AsyncIterator[DesktopSession]:
     pbip = Path(pbip).resolve()

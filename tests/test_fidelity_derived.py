@@ -18,7 +18,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(scope="module")
 def book1():
-    return parse_workbook(load_workbook(_ROOT / "samples" / "input" / "Book1.twb"))
+    return parse_workbook(load_workbook(_ROOT / "samples" / "Book1" / "Book1.twb"))
 
 
 def test_parser_reads_titles_tooltip_links_and_sorts(book1):
@@ -36,7 +36,7 @@ def test_parser_reads_titles_tooltip_links_and_sorts(book1):
 
 def test_derived_expectations_agree_with_the_oracle(book1):
     derived = {s.name: s for s in derive_expectations(book1, "Book1.twb").sheets}
-    oracle = load_expectations(_ROOT / "samples" / "expected" / "Book1.toml")
+    oracle = load_expectations(_ROOT / "samples" / "Book1" / "expected.toml")
 
     assert set(derived) == {s.name for s in oracle.sheets}
     for expected in oracle.sheets:

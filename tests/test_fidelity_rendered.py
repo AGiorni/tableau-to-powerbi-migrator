@@ -15,7 +15,6 @@ from t2pbi.desktop.modeling import parse_csv_rows
 from t2pbi.fidelity import load_expectations, read_project
 from t2pbi.fidelity.expectations import Reference, _parse_sheet
 from t2pbi.fidelity.numeric import dax_for, score_numeric
-from t2pbi.fidelity.references import extract_thumbnails
 from t2pbi.fidelity.visual import VisualVerdict, judge_sheet, parse_verdict
 from t2pbi.graph import MigrationContext, migrate
 
@@ -58,8 +57,8 @@ def test_parse_csv_rows_strips_bracketed_headers():
 
 
 def test_numeric_scoring_on_book1_with_a_fake_engine(tmp_path):
-    expected = load_expectations(_ROOT / "samples" / "expected" / "Book1.toml")
-    migrate(_ROOT / "samples" / "input" / "Book1.twb", tmp_path, MigrationContext(run_output_validation=False))
+    expected = load_expectations(_ROOT / "samples" / "Book1" / "expected.toml")
+    migrate(_ROOT / "samples" / "Book1" / "Book1.twb", tmp_path, MigrationContext(run_output_validation=False))
     project = read_project(tmp_path)
     seen = []
 
@@ -88,12 +87,6 @@ def test_numeric_scoring_on_book1_with_a_fake_engine(tmp_path):
     assert not [r for r in results if r.outcome in ("fail", "fixed")]
 
 
-def test_thumbnails_are_extracted(tmp_path):
-    thumbs = extract_thumbnails(_ROOT / "samples" / "input" / "Book1.twb", tmp_path)
-    assert len(thumbs) == 6
-    assert thumbs["Sales by Category"].read_bytes().startswith(b"\x89PNG")
-
-
 def test_verdict_parsing_keeps_only_rubric_criteria_and_clamps_score():
     answer = (
         'Sure: {"criteria": {"chart_type": {"match": true, "note": "area"}, '
@@ -107,14 +100,23 @@ def test_verdict_parsing_keeps_only_rubric_criteria_and_clamps_score():
     assert parse_verdict(VisualVerdict(sheet="s", reference="r"), "no json").error
 
 
-def test_judge_sends_both_images_and_survives_provider_errors(tmp_path, fake_chat):
-    png = tmp_path / "a.png"
+def test_judge_sends_every_view_and_survives_provider_errors(tmp_path, fake_chat):
+    png, jpg = tmp_path / "view.png", tmp_path / "legend.jpg"
     png.write_bytes(b"\x89PNG fake")
+    jpg.write_bytes(b"\xff\xd8 fake")
     sheet = _parse_sheet({"name": "Sales by Category"})
 
     ok = fake_chat('{"criteria": {"layout": {"match": true, "note": ""}}, "score": 8, "summary": "ok"}')
-    verdict = judge_sheet(ok, sheet, png, png)
-    assert verdict.score == 8 and verdict.error is None
+    verdict = judge_sheet(ok, sheet, [png], png)
+    assert verdict.score == 8 and verdict.error is None and verdict.reference == "view.png"
 
-    failing = judge_sheet(fake_chat(RuntimeError("quota")), sheet, png, png)
+    judge_sheet(ok, sheet, [jpg, png], png)
+    content = ok.prompts[-1]
+    urls = [block["image_url"]["url"] for block in content if block["type"] == "image_url"]
+    assert [url.split(";", 1)[0] for url in urls] == ["data:image/jpeg", "data:image/png", "data:image/png"]
+    labels = [block["text"] for block in content if block["type"] == "text"]
+    assert "Image 1: the Tableau original (view 1 of 2: legend.jpg)." in labels
+    assert labels[-1] == "Image 3: the migrated Power BI page."
+
+    failing = judge_sheet(fake_chat(RuntimeError("quota")), sheet, [png], png)
     assert failing.error == "RuntimeError: quota"

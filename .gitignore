@@ -22,9 +22,6 @@ env/
 
 # Generated output
 /out/
-/out_book1/
-/out2/
-reference_pbip/
 *.pbip.tmp/
 
 # Pinned external tools: installed with `npm ci` in tools/, built with `dotnet publish`

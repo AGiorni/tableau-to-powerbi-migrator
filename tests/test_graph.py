@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
-from t2pbi.graph import MigrationContext, MigrationState, build_graph, nodes
+from t2pbi.graph import MigrationContext, MigrationState, build_graph, nodes, recursion_limit
+from t2pbi.ingest import load_workbook
 from t2pbi.ir.tableau_ir import TableauCalculatedField
 from t2pbi.mapping.model_mapper import UNTRANSLATED_DAX
 from t2pbi.mapping.report import IssueSeverity
+from t2pbi.parse import parse_workbook
+from t2pbi.refine.worklist import WorkItem
+from t2pbi.refine.workspace import Workspace
 
 _BROKEN = "SUM('Superstore'[Sales]"
 _VALID = "SUM('Superstore'[Sales])"
@@ -20,6 +25,7 @@ def _run(twb, out_dir, context: MigrationContext) -> tuple[list[str], MigrationS
     final: dict = {}
     for mode, chunk in build_graph().stream(
         MigrationState(input_path=str(twb), out_dir=str(out_dir)),
+        {"recursion_limit": recursion_limit(context)},
         context=context,
         stream_mode=["updates", "values"],
     ):
@@ -45,7 +51,12 @@ def test_graph_shape():
         "validate_tmdl",
         "validate_pbir",
         "prepare_workspace",
+        "open_desktop",
         "assess",
+        "pick_item",
+        "fix_item",
+        "review_item",
+        "finalize_refine",
         "__end__",
     }
     edges = {(e.source, e.target, e.data, e.conditional) for e in graph.edges}
@@ -60,7 +71,17 @@ def test_graph_shape():
     assert ("validate_tmdl", "validate_pbir", None, False) in edges
     assert ("validate_pbir", "prepare_workspace", "refine", True) in edges
     assert ("validate_pbir", "__end__", "done", True) in edges
-    assert ("prepare_workspace", "assess", None, False) in edges
+    assert ("prepare_workspace", "open_desktop", "desktop", True) in edges
+    assert ("prepare_workspace", "assess", "checks_only", True) in edges
+    assert ("open_desktop", "assess", None, False) in edges
+    # The refinement loop: the agent (fix_item) proposes, review_item keeps or reverts.
+    assert ("assess", "pick_item", "work", True) in edges
+    assert ("assess", "finalize_refine", "done", True) in edges
+    assert ("pick_item", "fix_item", None, False) in edges
+    assert ("fix_item", "review_item", None, False) in edges
+    assert ("review_item", "pick_item", "work", True) in edges
+    assert ("review_item", "finalize_refine", "done", True) in edges
+    assert ("finalize_refine", "__end__", None, False) in edges
 
 
 def test_no_llm_path(superstore_twb, tmp_path):
@@ -173,11 +194,14 @@ def test_route_refine():
 def test_refine_builds_a_workspace_and_a_work_list(book1_twb, tmp_path, monkeypatch, fake_chat):
     monkeypatch.setattr(nodes, "run_pbir_validation", lambda _path: None)
     monkeypatch.setattr(nodes.tmdl_cli, "run_tmdl_validation", lambda _path: None)
-    context = MigrationContext(chat_model=fake_chat("BLANK()"), refine=True, max_translation_attempts=1)
+    context = MigrationContext(
+        chat_model=fake_chat("BLANK()"), refine=True, max_translation_attempts=1,
+        use_desktop=False, max_refine_items=0,
+    )
 
     visited, state = _run(book1_twb, tmp_path, context)
 
-    assert visited[-2:] == ["prepare_workspace", "assess"]
+    assert visited[-3:] == ["prepare_workspace", "assess", "finalize_refine"]
     assert (tmp_path / ".git").is_dir() and state.refine_baseline
     pages = {item.page: item for item in state.work_items}
     # From the workbook alone (no oracle): the known Book1 gaps show up as work.
@@ -186,3 +210,122 @@ def test_refine_builds_a_workspace_and_a_work_list(book1_twb, tmp_path, monkeypa
     # Untranslated calcs are problems on the pages that show them.
     assert any(p.check == "report:measure[profit ratio]" for p in pages["Tooltip: Profit Ratio by City"].problems)
     assert any(i.stage == "refine" and i.message.startswith("To refine") for i in state.issues)
+
+
+def test_route_desktop_and_route_work():
+    state = MigrationState(input_path="x", out_dir="y", work_items=[WorkItem(page="A"), WorkItem(page="B")])
+    assert nodes.route_desktop(state, SimpleNamespace(context=MigrationContext())) == "desktop"
+    assert nodes.route_desktop(state, SimpleNamespace(context=MigrationContext(use_desktop=False))) == "checks_only"
+    budget = SimpleNamespace(context=MigrationContext(max_refine_items=2))
+    assert nodes.route_work(state, budget) == "work"
+    assert nodes.route_work(state.model_copy(update={"refine_picks": 2}), budget) == "done"
+    assert nodes.route_work(state.model_copy(update={"work_items": []}), budget) == "done"
+
+
+def test_open_desktop_compares_only_pages_with_a_user_screenshot(book1_twb, tmp_path, monkeypatch):
+    """No thumbnail fallback: without the user's screenshots Desktop isn't even opened, and with
+    some, only those pages get a picture to be judged against."""
+
+    opened: list = []
+
+    async def no_data(_pbip):
+        return None
+
+    monkeypatch.setattr(nodes.bridge, "available", lambda: True)
+    monkeypatch.setattr(nodes, "eula_accepted", lambda: True)
+    monkeypatch.setattr(nodes.bridge, "open_report", lambda pbip: opened.append(pbip) or 4242)
+    monkeypatch.setattr(nodes.bridge, "wait_ready", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(nodes, "load_data", no_data)
+    state = MigrationState(
+        input_path=str(book1_twb), out_dir=str(tmp_path), pbip_path=str(tmp_path / "Book1.pbip"),
+        workbook=parse_workbook(load_workbook(book1_twb)),
+    )
+
+    def open_with(folder):
+        return nodes.open_desktop(state, SimpleNamespace(context=MigrationContext(reference_images=folder)))
+
+    none_given = open_with(None)
+    assert "desktop_pid" not in none_given and not opened
+    assert "no Tableau screenshots given" in none_given["issues"][0].message
+
+    shots = tmp_path / "screenshots"
+    for name in ("Sales by category/view.png", "Sales by category/legend.png", "Sales by segment/view.png",
+                 "sales_by_segment/view.png", "Sales/view.png"):
+        (shots / name).parent.mkdir(parents=True, exist_ok=True)
+        (shots / name).write_bytes(b"")
+    (shots / "loose.png").write_bytes(b"")
+    some = open_with(str(shots))
+    assert some["desktop_pid"] == 4242 and len(opened) == 1
+    assert {s: [Path(p).name for p in ps] for s, ps in some["references"].items()} == {
+        "Sales by Category": ["legend.png", "view.png"]
+    }
+    warnings = [i.message for i in some["issues"] if i.severity is IssueSeverity.WARNING]
+    assert any("several screenshot folders match" in w for w in warnings)  # Sales by segment: not judged
+    assert any("named after no sheet, not used: Sales." in w for w in warnings)
+    assert any("outside a sheet's folder, not used: loose.png" in w for w in warnings)
+
+    for image in (shots / "Sales by category").iterdir():
+        image.unlink()  # left: an ambiguous pair, a misnamed folder, a loose file
+    left = open_with(str(shots))
+    assert "desktop_pid" not in left and len(opened) == 1
+
+
+def test_refine_loop_keeps_good_changes_and_reverts_bad_ones(book1_twb, tmp_path, monkeypatch, scripted_agent_chat):
+    monkeypatch.setattr(nodes, "run_pbir_validation", lambda _path: None)
+    monkeypatch.setattr(nodes.tmdl_cli, "run_tmdl_validation", lambda _path: None)
+    monkeypatch.setattr(nodes, "validator_errors", lambda _path: [])
+    chat = scripted_agent_chat(scripts=[
+        # Run 1, "Key Performance Indicators" (most problems): the title Tableau displays.
+        [("set_title", {"title": "Executive Overview - Profitability"}), "CHANGED: set the title Tableau shows"],
+        # Run 2, "Tooltip: Profit Ratio by City": removes a field the page needs -> refused, reverted.
+        [("remove_field", {"role": "Y", "field": "profit ratio:measure"}), "CHANGED: removed the measure"],
+        # Run 3, the retry with the review's reasons: make it the map's hover tooltip.
+        [("check_page", {}), ("make_tooltip_page", {"host_page": "profit ratio by geography"}),
+         "CHANGED: made it the map's tooltip"],
+    ])
+    context = MigrationContext(
+        chat_model=chat, refine=True, use_desktop=False, max_refine_items=3, max_translation_attempts=1
+    )
+
+    visited, state = _run(book1_twb, tmp_path, context)
+
+    assert visited[visited.index("assess"):] == [
+        "assess", *["pick_item", "fix_item", "review_item"] * 3, "finalize_refine",
+    ]
+    assert [(o.page, o.outcome) for o in state.refine_log] == [
+        ("Key Performance Indicators", "accepted"),
+        ("Tooltip: Profit Ratio by City", "rejected"),
+        ("Tooltip: Profit Ratio by City", "accepted"),
+    ]
+    assert any("now failing" in r for r in state.refine_log[1].reasons)
+    # The retry was told why the first attempt was refused.
+    assert "refused by the review" in chat.briefs[2] and "now failing" in chat.briefs[2]
+    assert any(r.startswith("Still failing on this page") for r in chat.tool_results)  # check_page ran
+
+    # One commit per kept change on top of the baseline; the refused edit left no trace.
+    workspace = Workspace(state.pbip_path)
+    log = [subject for _sha, subject in workspace.log()]
+    assert log == [
+        "Refine Tooltip: Profit Ratio by City: made it the map's tooltip",
+        "Refine Key Performance Indicators: set the title Tableau shows",
+        "Baseline: deterministic migration",
+    ]
+    assert workspace.diff() == ""
+    assert "Tooltip: Profit Ratio by City::fields[profit ratio:measure]" not in state.failing_checks
+    for fixed in ("Key Performance Indicators::title", "Tooltip: Profit Ratio by City::tooltip-page",
+                  "Tooltip: Profit Ratio by City::hidden"):
+        assert fixed not in state.failing_checks
+    assert len(state.failing_checks) == state.failing_at_start - 3
+
+    summary = [i for i in state.issues if i.stage == "refine" and i.object_name == "summary"]
+    assert summary and "kept 2 of 3" in summary[0].message
+    assert any(i.object_name == "budget" for i in state.issues)  # pages left for lack of agent runs
+
+
+def test_commit_subjects_fit_git_conventions():
+    short = nodes._commit_message("Page", "set the title", ["fixed: title"])
+    assert short == "Refine Page: set the title\n\nfixed: title"
+    summary = "switched to a stacked area chart, set the title and added Profit to the tooltips of the visual"
+    subject, _, body = nodes._commit_message("Sales by Category", summary, ["fixed: x"]).partition("\n\n")
+    assert len(subject) <= 72 and subject.endswith("…")
+    assert body == f"{summary}\nfixed: x"

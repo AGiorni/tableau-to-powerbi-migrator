@@ -9,6 +9,164 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-27 — Samples: one folder per workbook, one screenshot folder per sheet
+
+**Decision (the user's, choosing between layouts).** `samples/` was split by kind (`input/`
+workbooks, `expected/` oracles, `reference/<workbook>/` screenshots). It's now one folder per
+workbook: `samples/<name>/<name>.twb`, `expected.toml`, `README.md` and
+`screenshots/<sheet>/*.png`. Screenshots are a folder per sheet that can hold several images,
+all of which go to the visual judge and the agent as views of the same sheet.
+
+**Why.**
+- *It's the shape of a migration job.* What a user brings is one workbook and its pictures. A
+  future front end with a setup wizard (BACKLOG) can list the sheets from the Tableau IR, ask
+  for screenshots per sheet and write exactly this layout, so the graph won't change when it
+  arrives.
+- *A folder per sheet makes the pairing explicit and leaves room for more.* One picture can't
+  always show everything the judge needs: a legend's labels, a hovered tooltip. Before, a second
+  image for a sheet was an "ambiguous" error.
+- *The pairing is still by name, matched loosely.* Windows forbids `:` in names, so "Tooltip:
+  Profit Ratio by City" lives in `Tooltip_ Profit Ratio by City/`. A manifest file mapping sheets
+  to files would be exact, but a person would have to write it by hand, and the wizard can write
+  folders just as well. The run warns about the cases that would otherwise fail silently:
+  folders named after no sheet, images outside a sheet's folder, two folders for one sheet.
+
+**Also.** `build_brief` labelled every image `image/png`; it now shares `visual.image_block`
+with the judge, so JPEG screenshots are sent with their own type. Deleted, as unused and
+untracked: `reference_pbip/` (closes its BACKLOG open question), `out2/`, `out_book1/`, an empty
+`samples/tableau examples/` and old spike runs in `out/`.
+
+**Verified.** Files moved with `git mv`, so history follows. Tests rewritten for the layout
+(several images per sheet, an empty folder, misnamed folders, loose files, the judge's labels and
+image types). `scripts/fidelity.py` still scores Book1 45/63. The snapshot is IDENTICAL: the
+workbook's location doesn't reach the output.
+
+---
+
+## 2026-11-27 — The visual judge uses only the user's screenshots (thumbnails dropped)
+
+**Decision (the user's):** a page is compared with a picture only if the user gave a screenshot
+of its Tableau sheet. The thumbnails Tableau embeds in a workbook are no longer a fallback, in the
+refinement loop or in `scripts/fidelity.py --render`. This reverses "embedded thumbnails are good
+enough to judge" (2026-11-25, step 0).
+
+**Why.** The thumbnails are at most 192px (Book1's KPI one is 192×64). At that size the model can
+tell the chart type and the layout, which is what step 0 checked, but not titles, axis labels,
+legends or the date level, which are half of the rubric. Since 4.4 the judge's score is part of
+the review gate: an item whose only problems come from the judge is kept only if the score rises,
+and any change is refused if it drops. A reference too small to read would decide which agent
+edits are kept, not just a number in a report.
+
+**What changed.**
+- `fidelity/references.match_screenshots(folder, sheets)` replaces `find_reference_image`. A
+  sheet that two candidates match gets neither (which one is meant would be a guess), and
+  screenshots that match no sheet are listed, since they're most likely misnamed. Without the
+  thumbnail fallback, a misnamed file would otherwise silently mean "not judged". (Layout: the
+  entry above.)
+- `open_desktop` checks the screenshots first. With none given (`--reference-images`), Desktop
+  isn't opened at all: it was only needed for pictures. Ambiguous and misnamed files are
+  WARNINGs, and the INFO line names the pages that won't be compared. The check stays in the node,
+  not in `route_desktop`, so the report can say why: a router can't add issues. That's the same
+  split as a missing tool.
+- `extract_thumbnails` is gone: nothing else used it.
+
+**Verified.** New tests: without a folder, Desktop isn't launched; with one, only the pages that
+have a screenshot get a reference; a folder with only an ambiguous pair and a misnamed file
+doesn't launch Desktop. All six Book1 screenshots match their sheets, so the 4.4 results below
+are unaffected. Non-refine output is unchanged (snapshot compare).
+
+---
+
+## 2026-11-26 — Step 4.4: the agent loop
+
+`--refine` now runs the whole loop agreed in 4.2: `prepare_workspace` → [`desktop`]
+`open_desktop` | [`checks_only`] → `assess` → [`work`] `pick_item` → `fix_item` → `review_item`
+→ [`work`] back to `pick_item` | [`done`] `finalize_refine`. Every decision is a named route;
+`tests/test_graph.py` pins them, and a scripted model drives the loop end to end in the tests
+(kept, refused and reverted, kept on retry).
+
+**Design choices.**
+- *Desktop is opened once per run, not once per page.* `open_desktop` launches it through the
+  Bridge, waits until the project is loaded, and refreshes the data through the Authoring MCP;
+  then the MCP connection is closed and only the process id stays in the state (plain data, so
+  the state stays serializable). Reviews reload the files (`powerbi-desktop reload`, data kept)
+  and screenshot one page. `finalize_refine` closes Desktop; `migrate()` also closes, in a
+  `finally`, any Desktop this process launched, so a node that raises can't leave one behind.
+- *Pictures are a bonus, never a requirement.* No Bridge, no EULA, no user screenshot, Desktop
+  failing to open, or `--no-desktop`: the run goes on with the checks alone (an INFO or WARNING
+  says why). The `use_desktop` setting is a route (`route_desktop`), tool absence is handled in
+  the node — the same split as the validators.
+- *The agent: `langchain.agents.create_agent`, one fresh conversation per page.* LangGraph 1.x
+  deprecated `langgraph.prebuilt.create_react_agent` in favour of it (to be removed in LangGraph
+  2), so the new code starts on the supported API; `langchain` is a new dependency (1.4.1
+  installs without moving `langchain-core` or `langgraph`). The budget is
+  `ModelCallLimitMiddleware(exit_behavior="error")` — `max_agent_steps` model calls — rather than
+  a recursion limit, so running out is a clear "stopped after N model calls" and whatever the
+  agent changed still goes through the review.
+- *The brief* is facts from the Tableau IR in the tools' own field-spec language (shelves,
+  encodings, title, sort, viz-in-tooltip links), the page as it is now (`ReportEditor.overview`,
+  every visual), the problems, the review's reasons on a retry, and — with Desktop — the Tableau
+  picture and the current screenshot. Tools are bound to the one page; a refused edit comes back
+  as `Refused: <why>` text the agent can act on. `check_page` lets it see, before finishing,
+  what the review will see: its page's failing checks, checks it newly broke, validator errors.
+- *The gate is deterministic and pure* (`review.judge_verdict`, unit-tested): validators clean, no
+  passing check newly failing anywhere, at least one of the page's target checks now passing (or,
+  for an item with only judge problems, the judge's score rising), and the judge's score not
+  dropping by more than `JUDGE_TOLERANCE` = 1 — the judge is an LLM, and the same pair of images
+  can score a point apart. Kept → one commit, message = the agent's own one-line summary plus the
+  gate's reasons. Refused → `git` revert and the page goes back to the front of the list once,
+  with the reasons in its brief.
+- *Budgets*: `max_refine_items` agent runs (a retry counts), default 10. `migrate()` sets the
+  graph's recursion limit from the budgets (the default 25 steps is too few once the loop runs).
+
+**Found on the way.**
+- *Re-running into the same output folder duplicated pages.* Page, visual and table folders get
+  fresh names on every run, and `assemble_pbip` only wrote files, so a second run left the first
+  run's folders behind (Book1: 6 pages, then 12). It now clears its own `<name>.Report/definition`
+  and `<name>.SemanticModel/definition` first; Desktop's `.pbi` folders and anything else in the
+  output folder are left alone. A test pins it.
+- *Reasoning models take tool calls only on the Responses API.* The first real run reached every
+  page, but Azure refused each agent call: "Function tools with reasoning_effort are not supported
+  for this model in /v1/chat/completions". New setting `T2PBI_AZURE_OPENAI_RESPONSES_API=true`
+  (needs API version 2025-03-01-preview or later). Its answers are lists of content blocks, not
+  strings, so every reader of a model answer now goes through `llm.message_text`.
+- *A model's several tool calls run on parallel threads.* The second real run had two agent runs
+  end in `JSONDecodeError: Expecting value`: the model asked for several edits in one message,
+  the agent's tool node ran them concurrently, and two edits of the same `visual.json` read each
+  other's half-written file. The page's tools now share one lock. Reproduced in a test that fails
+  with exactly that error when the lock is removed. (The review still did its job: the partial
+  change was checked like any other, and kept because it fixed three checks.)
+
+- *The judge approved a visual Microsoft is retiring.* In the final run, the agent made the
+  geography page a `filledMap` instead of our `azureMap`; the item had only judge problems, the
+  judge's score rose (2 → 4/10, shaded regions look more like Tableau), and the change was kept —
+  while the hand-written oracle fails it. Microsoft has scheduled the Bing-based Map and Filled
+  map for deprecation in favour of Azure Maps, whose filled-map layer draws shaded regions.
+  `set_visual_type` now refuses `map` and `filledMap` with that reason, and the prompt says maps
+  stay `azureMap`. Lesson: a judge-only item is the weakest evidence the gate accepts; rules the
+  picture can't show belong in the tools.
+
+**Verified.** Book1, the LLM first pass vs `--refine` (Desktop open, user screenshots as
+references, Responses API), final run after the lock fix:
+
+| | first pass | refined |
+|---|---|---|
+| Oracle (`samples/expected/Book1.toml`) | 45/63 (71%) | 52/63 (83%) |
+| Derived checks (what the agent sees) | 34/49 | 40/49 |
+| Failing derived checks | 15 | 9 |
+
+Eight agent runs (six pages, two retries): five kept as commits, three refused — "Sales by
+segment" twice because the judge's score fell 5 → 3 (the same change was kept on "Sales by
+Category"; judge noise or the blank small-multiples panel, not investigated), "Executive Overview"
+once for no measurable improvement, then kept on its retry. Judge scores on the kept pages: KPI
+4 → 7, tooltip 7 → 8, geography 2 → 4, dashboard 3 → 4, Sales by Category 4 → 4. In the run
+before, the PBIR validator caught an edit that left a required role empty and the review reverted
+it. Everything the agent says it couldn't fix is model-side — the month date level, row counts,
+the profitable/unprofitable colour split — which is 4.5. The map guard came after this run: the
+geography change would now be refused (oracle count unchanged: one fail and one fixed gap cancel).
+
+---
+
 ## 2026-11-26 — Step 4.3: the agent's edit tools
 
 `refine/edits.py` is what the agent will be able to do to a report: describe a page, list the
@@ -110,7 +268,7 @@ loads the data, checks the numbers and judges the pictures:
   expression; one query per sheet; compared at Tableau's displayed precision ("29" accepts
   28.5–29.5).
 - `fidelity/visual.py` (1c): the model gets the Tableau image (the user's screenshot, else the
-  embedded thumbnail) and the Desktop screenshot, and scores a fixed rubric (chart type, fields,
+  embedded thumbnail; the fallback was dropped 2026-11-27) and the Desktop screenshot, and scores a fixed rubric (chart type, fields,
   date granularity, colour, layout, title) plus 0–10. One structured call per sheet.
 
 **Results on Book1** (structural unchanged at 45/62):
@@ -243,7 +401,7 @@ acceptable visual types and the fields per role a *faithful* Power BI report wou
 - *Book1 only.* `superstore.twb`'s only worksheet has empty shelves and `sales_sql.twb` has none,
   so neither has anything to be faithful to; they stay model-mapping fixtures.
 - *Reference screenshots come from the user*, once per workbook (`samples/reference/Book1/`,
-  later a CLI option), with the embedded thumbnails as fallback. The user's screenshots included
+  later a CLI option), with the embedded thumbnails as fallback (dropped 2026-11-27). The user's screenshots included
   Tableau's shelf panes and confirmed every expectation drafted from the XML; they also showed
   things I hadn't looked for in the XML: custom titles with dynamic filter inserts, number
   formats, an ascending sort and value labels. The point for the app: a reference picture
@@ -307,7 +465,7 @@ byte-identical before and after (`scripts/snapshot_outputs.py`, now in the repo)
   `PBI_MODELING_MCP_ACCEPT_EULA=true`, never on its own.
 - *Embedded Tableau thumbnails are good enough to judge.* Book1's 192px images clearly show what
   our output loses — see the new known gaps in BACKLOG (monthly vs daily dates, the missing
-  colour split).
+  colour split). *(Reversed 2026-11-27: the judge now uses only the user's screenshots.)*
 
 ---
 
