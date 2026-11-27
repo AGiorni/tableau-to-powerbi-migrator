@@ -33,12 +33,19 @@ from t2pbi.mapping.visual_router_llm import LLMVisualRouter
 from t2pbi.parse import parse_workbook
 from t2pbi.refine import pictures
 from t2pbi.refine.agent import build_brief, make_tools, run_agent, tableau_facts
-from t2pbi.refine.edits import EditError, ReportEditor
-from t2pbi.refine.review import derived_failures, failures, judge_verdict, validator_errors
+from t2pbi.refine.report_files import ReportFileError, ReportFiles
+from t2pbi.refine.review import (
+    derived_failures,
+    failures,
+    judge_verdict,
+    report_errors,
+    validator_errors,
+)
 from t2pbi.refine.worklist import RefineOutcome, build_work_list
 from t2pbi.refine.workspace import Workspace
 from t2pbi.validate import model_validate, tmdl_cli
 from t2pbi.validate.pbir_cli import iter_findings, run_pbir_validation
+from t2pbi.validate.report_refs import check_report_references
 
 # --------------------------------------------------------------------------------------------
 # Nodes
@@ -239,10 +246,14 @@ def validate_tmdl(state: MigrationState) -> dict:
 
 
 def validate_pbir(state: MigrationState) -> dict:
-    """Run the external powerbi-report-author validator and fold its diagnostics into issues."""
+    """Check the written report: Microsoft's powerbi-report-author validator (schemas, catalog),
+    then t2pbi's reference check against the semantic model, which that validator never opens."""
 
     assert state.pbip_path is not None
     report = MigrationReport()
+    for problem in check_report_references(Path(state.pbip_path).parent):
+        report.add(IssueSeverity.ERROR, "pbir", "REFERENCE", str(problem))
+
     result = run_pbir_validation(state.pbip_path)
     if result is None:
         report.add(
@@ -428,17 +439,17 @@ def pick_item(state: MigrationState) -> dict:
 
 
 def fix_item(state: MigrationState, runtime: Runtime[MigrationContext]) -> dict:
-    """Run the refinement agent on one page. It edits the project files through typed tools; the
-    review decides whether the change is kept."""
+    """Run the refinement agent on one page. It edits the report's PBIR files directly, each save
+    validated; the review decides whether the change is kept."""
 
     item = state.current_item
     assert item is not None and state.workbook is not None and state.pbip_path is not None
     workbook, pbip_path = state.workbook, state.pbip_path
     project_dir = Path(pbip_path).parent
-    editor = ReportEditor(project_dir)
+    files = ReportFiles(project_dir)
     try:
-        current: dict[str, Any] = editor.overview(item.page)
-    except EditError as exc:
+        current: dict[str, Any] = files.overview(item.page)
+    except ReportFileError as exc:
         current = {"error": str(exc)}
 
     references = state.references.get(item.page, [])
@@ -458,7 +469,7 @@ def fix_item(state: MigrationState, runtime: Runtime[MigrationContext]) -> dict:
         now = derived_failures(workbook, workbook_file, project_dir)
         mine = [f"- {k.split('::', 1)[1]}: {v}" for k, v in now.items() if k.startswith(f"{item.page}::")]
         broke = [f"- {k}: {v}" for k, v in now.items() if k not in state.failing_checks]
-        errors = [f"- {e}" for e in validator_errors(pbip_path)]
+        errors = [f"- {e}" for e in report_errors(pbip_path)]
         lines = ["Still failing on this page:", *(mine or ["- nothing"])]
         if broke:
             lines += ["Newly failing (the review will refuse the change until these pass again):", *broke]
@@ -469,7 +480,8 @@ def fix_item(state: MigrationState, runtime: Runtime[MigrationContext]) -> dict:
         return "\n".join(lines)
 
     context = runtime.context
-    run = run_agent(context.chat_model, make_tools(editor, item.page, check_page), brief, context.max_agent_steps)
+    tools = make_tools(files, item.page, lambda: report_errors(pbip_path), check_page)
+    run = run_agent(context.chat_model, tools, brief, context.max_agent_steps)
     report = MigrationReport()
     if run.error:
         report.add(IssueSeverity.WARNING, "refine", item.page, f"Agent run ended early: {run.error}.")

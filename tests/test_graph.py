@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -312,13 +313,24 @@ def test_refine_loop_keeps_good_changes_and_reverts_bad_ones(book1_twb, tmp_path
     monkeypatch.setattr(nodes, "run_pbir_validation", lambda _path: None)
     monkeypatch.setattr(nodes.tmdl_cli, "run_tmdl_validation", lambda _path: None)
     monkeypatch.setattr(nodes, "validator_errors", lambda _path: [])
+    monkeypatch.setattr(nodes, "report_errors", lambda _path: [])
+    kpi, tip, geo = "Key Performance Indicators", "Tooltip: Profit Ratio by City", "profit ratio by geography"
     chat = scripted_agent_chat(scripts=[
         # Run 1, "Key Performance Indicators" (most problems): the title Tableau displays.
-        [("set_title", {"title": "Executive Overview - Profitability"}), "CHANGED: set the title Tableau shows"],
-        # Run 2, "Tooltip: Profit Ratio by City": removes a field the page needs -> refused, reverted.
-        [("remove_field", {"role": "Y", "field": "profit ratio:measure"}), "CHANGED: removed the measure"],
-        # Run 3, the retry with the review's reasons: make it the map's hover tooltip.
-        [("check_page", {}), ("make_tooltip_page", {"host_page": "profit ratio by geography"}),
+        [("read_visual", {"visual": kpi}),
+         ("write_visual", lambda r: {"visual": kpi, "content": _edit(r[-1], _title("Executive Overview - Profitability"))}),
+         "CHANGED: set the title Tableau shows"],
+        # Run 2, the tooltip sheet: removes a field the page needs -> refused, reverted.
+        [("read_visual", {"visual": tip}),
+         ("write_visual", lambda r: {"visual": tip, "content": _edit(r[-1], _drop_role("Y"))}),
+         "CHANGED: removed the measure"],
+        # Run 3, the retry with the review's reasons: make it the map's hover tooltip, which takes
+        # its own page.json and the map's visual.json on the host page.
+        [("check_page", {}), ("read_page", {}),
+         ("write_page", lambda r: {"content": _edit(r[-1], _tooltip_page)}),
+         ("read_visual", {"visual": geo, "page_name": geo}),
+         ("write_visual", lambda r: {"visual": geo, "page_name": geo,
+                                     "content": _edit(r[-1], _shows_tooltip(_page_named(r, tip)))}),
          "CHANGED: made it the map's tooltip"],
     ])
     context = MigrationContext(
@@ -358,6 +370,56 @@ def test_refine_loop_keeps_good_changes_and_reverts_bad_ones(book1_twb, tmp_path
     summary = [i for i in state.issues if i.stage == "refine" and i.object_name == "summary"]
     assert summary and "kept 2 of 3" in summary[0].message
     assert any(i.object_name == "budget" for i in state.issues)  # pages left for lack of agent runs
+
+
+def _edit(text: str, change) -> str:
+    """A file the agent read, changed by ``change`` (which edits the parsed JSON in place)."""
+
+    data = json.loads(text)
+    change(data)
+    return json.dumps(data)
+
+
+def _literal(value: str) -> dict:
+    return {"expr": {"Literal": {"Value": value}}}
+
+
+def _title(title: str):
+    def change(visual: dict) -> None:
+        visual["visual"]["visualContainerObjects"]["title"][0]["properties"]["text"] = _literal(f"'{title}'")
+    return change
+
+
+def _drop_role(role: str):
+    return lambda visual: visual["visual"]["query"]["queryState"].pop(role)
+
+
+def _tooltip_page(page: dict) -> None:
+    page.update({
+        "type": "Tooltip", "visibility": "HiddenInViewMode", "displayOption": "ActualSize",
+        "width": 320, "height": 240, "pageBinding": {"name": "tip0000000000000001", "type": "Tooltip"},
+    })
+
+
+def _page_named(results: list[str], display_name: str) -> str:
+    """The ``name`` of the page whose page.json the agent read earlier in the run."""
+
+    for text in results:
+        try:
+            data = json.loads(text)
+        except ValueError:
+            continue
+        if isinstance(data, dict) and data.get("displayName") == display_name:
+            return data["name"]
+    raise AssertionError(f"page {display_name!r} wasn't read")
+
+
+def _shows_tooltip(page_name: str):
+    def change(visual: dict) -> None:
+        visual["visual"].setdefault("visualContainerObjects", {})["visualTooltip"] = [{"properties": {
+            "show": _literal("true"), "type": _literal("'Canvas'"), "section": _literal(f"'{page_name}'"),
+        }}]
+    return change
 
 
 def test_commit_subjects_fit_git_conventions():

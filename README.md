@@ -115,9 +115,13 @@ t2pbi migrate .\samples\Book1\Book1.twb --out .\out --refine --reference-images 
   (`--reference-images`: one folder per sheet, named after it, with one or more images). Pages
   without screenshots aren't compared with a picture; without the option, Desktop isn't opened.
   The small thumbnails Tableau stores in the workbook are not used: too little detail to judge by.
-- The agent edits the report through typed tools only; a deterministic review keeps a change only
-  if Microsoft's validators stay clean, no check that passed breaks, and the page improves.
-  Otherwise the change is reverted and the page gets one retry with the reasons.
+- The agent edits the report's PBIR JSON files directly, the way Microsoft's report-authoring
+  tooling expects: it reads a page or visual file, looks up visual roles, formatting properties and
+  literal encodings with `powerbi-report-author`, and saves the file. Every save is validated —
+  Microsoft's PBIR validator plus t2pbi's check that every field exists in the model — and the
+  errors go back to the agent to repair. A deterministic review then keeps a change only if the
+  validators stay clean, no check that passed breaks, and the page improves; otherwise it's
+  reverted and the page gets one retry with the reasons.
 - Desktop needs the Desktop Bridge (`npm ci` in `tools/`) and the Authoring MCP's EULA accepted
   by you (`PBI_MODELING_MCP_ACCEPT_EULA=true`) to load the data; without them, or with
   `--no-desktop`, the review uses the checks alone.

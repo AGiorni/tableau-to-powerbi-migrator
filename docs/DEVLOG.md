@@ -9,6 +9,85 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-27 — Step 4.4b: the agent edits PBIR JSON directly (typed edits removed)
+
+**Decision (the user's).** This reverses 4.3's "typed edits, not free-form JSON patches". The
+agent now edits the report the way Microsoft's report-authoring tooling is meant to be used: it
+reads a `page.json` or `visual.json`, looks up what it needs with `powerbi-report-author`
+(`catalog describe` for roles, `formatting` for properties, `expr encode` for literals), and saves
+the file whole. Every save is validated and the errors go back to it to repair. The typed edits
+(`refine/edits.py`, about 300 lines, with a tool per kind of change) are deleted rather than kept
+alongside. The user didn't want an A/B comparison.
+
+**Why.** Typed tools cover only what we wrote a tool for (type, field, title, sort, tooltip page),
+so every new kind of fix (formatting, layout, filters, conditional colours) meant more code.
+Microsoft's CLI has no edit commands by design: its lookups are documentation for an agent that
+writes the JSON itself. Current models write that JSON well, given the shapes and a validator to
+answer to.
+
+**What made it safe enough: closing the validator's gaps first.** A probe on a migrated Book1 copy
+with three planted mistakes:
+- an unknown role was an error with file and JSON path;
+- a misspelled visual type was only a warning, since it might be a custom visual;
+- a column that doesn't exist (`Orders[Proffit]`) wasn't reported at all, because the validator
+  never opens the semantic model (known since step 0).
+
+The new `validate/report_refs.py` walks every page and visual file and checks every `Column`,
+`Measure` and date-hierarchy column against the model's tables, columns and measures. It
+resolves filter aliases (`From` / `Source`), reports a measure referenced as a column and vice
+versa, and suggests near names ("did you mean 'Profit'?"). It also makes unknown visual types
+and the retiring `map` / `filledMap` errors; the latter guard used to sit in the typed
+`set_visual_type`. It runs in `validate_pbir` (first pass), in every save, in `check_page` and
+in the review. All four samples' first-pass output is clean; the 4.4 run's output it flags
+(the `filledMap` the judge approved).
+
+**Design choices.**
+- *Saves aren't refused for being invalid.* An invalid save stays written and its errors are
+  returned, so the agent can build a change over several saves (change the type, then rebind
+  fields). If it finishes with errors, the review refuses and reverts the whole change. What
+  *is* refused: invalid JSON, a non-object, renaming a page or visual, and new visual names that
+  aren't plain identifiers.
+- *Writes go to page and visual files only, on any page,* found by display name and visual
+  name or title, never by a path from the agent. Any page is needed because a viz-in-tooltip
+  link is set on the host page's visual; the review already refuses breaking any check
+  anywhere. Pages aren't created or deleted; visuals can be created.
+- *Files are re-serialized with indentation*, so every kept change is a readable git diff.
+- *The system prompt carries the shapes our writer uses* (projection, aggregation codes,
+  sort, title, tooltip page and link). It tells the agent to read before writing and look up
+  rather than guess.
+- *Budget 15 → 25 model calls per page*: read, save and repair cost calls. The agent's own
+  recursion limit is set from the budget, so the budget is what stops a run.
+- The scripted test model can compute a call's arguments from earlier tool results (read a file,
+  write back an edited copy). The end-to-end loop test now builds the tooltip page from raw JSON
+  (page settings plus the host visual's link), and the derived checks accept it as they did the
+  typed tool's.
+
+**Verified.** 194 tests pass; ruff clean; first-pass output IDENTICAL (snapshot). Real Book1 run
+(LLM first pass vs `--refine`, user screenshots, Responses API), compared with 4.4's typed tools:
+
+| | 4.4 typed tools | 4.4b direct JSON |
+|---|---|---|
+| Oracle (`samples/Book1/expected.toml`) | 45/63 → 52/63 (83%) | 45/63 → 56/63 (89%) |
+| Derived checks | 34/49 → 40/49 | 34/49 → 43/49 |
+| Failing derived checks | 15 → 9 | 15 → 6 |
+| Agent runs kept | 5 of 8 | 6 of 8 |
+
+It fixed what the typed tools couldn't express. The KPI row counts, which the typed `bind_field`
+refused as "needs a model change", became count aggregations over a column (judge 3 → 9). On the
+map it switched on the Azure Maps filled-map layer, a formatting setting. It also built the
+tooltip page and its host link from raw JSON. The cost is effort: 10 to 32 tool calls per page,
+about 20 minutes for the run, and the geography page hit the 25-call budget. Its partial change
+was still checked and kept, with the judge at 2 → 3. The two refused attempts (dashboard, map)
+were kept on their retry. What remains is model-side: the month date level and the
+profitable/unprofitable colour split (4.5).
+
+**Found on the way: the run needs the reasoning-model settings.** A first attempt without
+`T2PBI_AZURE_OPENAI_TEMPERATURE=default` and `T2PBI_AZURE_OPENAI_RESPONSES_API=true` had every
+call refused by Azure (temperature 0; tools on Chat Completions). It still completed, reporting
+each refusal; nothing fell back silently. The settings belong in `.env`.
+
+---
+
 ## 2026-11-27 — Which Tableau sheets become pages: what a viewer can open as a tab
 
 **Before:** every worksheet became a page, and every dashboard became another page with copies
@@ -223,7 +302,8 @@ model's fields, set the visual type, bind or remove a field, set the title, set 
 turn a page into a hidden report-page tooltip linked from its host visual.
 
 **Design choices.**
-- *Typed edits, not free-form JSON patches.* Every argument is checked before anything is
+- *Typed edits, not free-form JSON patches.* *(Reversed 2026-11-27, step 4.4b: the agent now
+  edits the JSON directly, every save validated.)* Every argument is checked before anything is
   written: visual types and role names against the visual catalog, fields against the model
   (columns and measures read from the TMDL), grouping-vs-measure role kinds, role capacities. A
   refusal is an `EditError` worded for the agent — what was wrong and what is allowed — so it can

@@ -2,7 +2,8 @@
 
 The agent only proposes; this decides, with checks the agent can't influence:
 
-1. **Validators (hard).** Microsoft's PBIR and TMDL checkers must report no errors.
+1. **Validators (hard).** Microsoft's PBIR and TMDL checkers, and the reference check of the
+   report against its model, must report no errors.
 2. **Derived checks (hard).** No check that passed before may fail now, and at least one of the
    page's own failing checks must now pass — unless the page had none (its problems came from the
    report or the judge only), in which case the judge must see an improvement.
@@ -26,6 +27,7 @@ from t2pbi.mapping.report import IssueSeverity
 from t2pbi.refine.worklist import ProblemSource, WorkItem
 from t2pbi.validate.pbir_cli import iter_findings as pbir_findings
 from t2pbi.validate.pbir_cli import run_pbir_validation
+from t2pbi.validate.report_refs import check_report_references
 from t2pbi.validate.tmdl_cli import definition_dir, run_tmdl_validation
 from t2pbi.validate.tmdl_cli import iter_findings as tmdl_findings
 
@@ -46,13 +48,21 @@ def derived_failures(workbook: TableauWorkbook, workbook_file: str, project_dir:
     return failures(score_structural(derive_expectations(workbook, workbook_file), read_project(project_dir)))
 
 
-def validator_errors(pbip_path: str | Path) -> list[str]:
-    """Errors from Microsoft's validators; a validator that isn't installed counts as clean."""
+def report_errors(pbip_path: str | Path) -> list[str]:
+    """Errors in the report files: Microsoft's PBIR validator and the reference check against the
+    model (wrong fields, unknown or retiring visual types). What the agent's saves are checked with."""
 
-    errors = []
+    errors = [f"REFERENCE {p}" for p in check_report_references(Path(pbip_path).parent)]
     pbir = run_pbir_validation(pbip_path)
     if pbir is not None:
         errors += [f"PBIR {code}: {msg}" for sev, code, msg in pbir_findings(pbir) if sev is IssueSeverity.ERROR]
+    return errors
+
+
+def validator_errors(pbip_path: str | Path) -> list[str]:
+    """Errors from every validator, report and model; one that isn't installed counts as clean."""
+
+    errors = report_errors(pbip_path)
     tmdl = run_tmdl_validation(definition_dir(pbip_path))
     if tmdl is not None:
         errors += [f"{where}: {msg}" for sev, where, msg in tmdl_findings(tmdl) if sev is IssueSeverity.ERROR]

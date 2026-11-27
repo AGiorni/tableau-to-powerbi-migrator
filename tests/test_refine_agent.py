@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -10,12 +11,14 @@ import pytest
 from t2pbi.graph import MigrationContext, migrate
 from t2pbi.ingest import load_workbook
 from t2pbi.parse import parse_workbook
+from t2pbi.refine import agent
 from t2pbi.refine.agent import build_brief, make_tools, run_agent, tableau_facts
-from t2pbi.refine.edits import ReportEditor
+from t2pbi.refine.report_files import ReportFiles
 from t2pbi.refine.worklist import Problem, ProblemSource, WorkItem
 
 BOOK1 = Path(__file__).resolve().parents[1] / "samples" / "Book1" / "Book1.twb"
 TOOLTIP = "Tooltip: Profit Ratio by City"
+DASHBOARD = "Executive Overview"
 
 
 @pytest.fixture(scope="module")
@@ -26,9 +29,9 @@ def book1_project(tmp_path_factory):
 
 
 @pytest.fixture
-def editor(book1_project, tmp_path):
+def files(book1_project, tmp_path):
     shutil.copytree(book1_project, tmp_path, dirs_exist_ok=True)
-    return ReportEditor(tmp_path)
+    return ReportFiles(tmp_path)
 
 
 @pytest.fixture(scope="module")
@@ -36,7 +39,19 @@ def workbook():
     return parse_workbook(load_workbook(BOOK1))
 
 
-def test_tableau_facts_speak_the_tools_field_specs(workbook):
+def _tools(files, page=TOOLTIP, errors=()):
+    return {t.name: t for t in make_tools(files, page, lambda: list(errors), lambda: "checked")}
+
+
+def _retitled(text: str, title: str) -> str:
+    """A visual.json with its title replaced, as an agent would write it back."""
+
+    data = json.loads(text)
+    data["visual"]["visualContainerObjects"]["title"][0]["properties"]["text"]["expr"]["Literal"]["Value"] = f"'{title}'"
+    return json.dumps(data)
+
+
+def test_tableau_facts_speak_field_specs(workbook):
     facts = tableau_facts(workbook, "Sales by Category")
     assert facts["mark"] == "Area"
     assert "Order Date:month" in facts["columns_shelf"]
@@ -44,7 +59,7 @@ def test_tableau_facts_speak_the_tools_field_specs(workbook):
     tooltip = tableau_facts(workbook, TOOLTIP)
     assert tooltip["shown_in_tooltip_of"] == ["profit ratio by geography"]
     assert tooltip["sort"] == [{"field": "profit ratio:measure", "sorts": "City", "direction": "asc"}]
-    dashboard = tableau_facts(workbook, "Executive Overview")
+    dashboard = tableau_facts(workbook, DASHBOARD)
     assert "Key Performance Indicators" in dashboard["shows_sheets"]
     assert tableau_facts(workbook, "No such sheet")["note"].startswith("not found")
 
@@ -67,57 +82,127 @@ def test_the_brief_carries_problems_feedback_and_images(tmp_path):
     assert content[2]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
-def test_tools_are_bound_to_one_page_and_refusals_come_back_as_text(editor):
-    tools = {t.name: t for t in make_tools(editor, TOOLTIP, lambda: "checked")}
+def test_the_agent_reads_and_writes_the_reports_own_files(files):
+    tools = _tools(files)
     assert set(tools) == {
-        "describe_page", "list_model_fields", "allowed_roles", "set_visual_type", "bind_field",
-        "remove_field", "set_title", "set_sort", "make_tooltip_page", "check_page",
+        "list_pages", "read_page", "read_visual", "write_page", "write_visual", "list_model_fields",
+        "lookup_visual_type", "lookup_formatting", "encode_literal", "check_page",
     }
-    # Arguments are typed in each tool's schema (what the model sees).
-    assert set(tools["bind_field"].args) == {"role", "field", "visual"}
-    refused = tools["bind_field"].invoke({"role": "Nope", "field": "Profit:sum"})
-    assert refused.startswith("Refused:") and "roles are" in refused
-    done = tools["set_title"].invoke({"title": "Profit Ratio by City"})
-    assert "title set" in done
-    assert editor.describe(TOOLTIP)["title"] == "Profit Ratio by City"
+    assert set(tools["write_visual"].args) == {"visual", "content", "page_name"}  # what the model sees
+
+    pages = json.loads(tools["list_pages"].invoke({}))
+    assert {p["page"] for p in pages} >= {TOOLTIP, DASHBOARD}
+    original = tools["read_visual"].invoke({"visual": TOOLTIP})  # by title
+    saved = tools["write_visual"].invoke({"visual": TOOLTIP, "content": _retitled(original, "Profit Ratio by City")})
+    assert saved == f"Saved visual {json.loads(original)['name']!r} on page {TOOLTIP!r}. Validation: no errors."
+    assert files.overview(TOOLTIP)["visuals"][0]["title"] == "Profit Ratio by City"
+    assert "Profit" in json.loads(tools["list_model_fields"].invoke({}))["Orders"]["columns"]
     assert tools["check_page"].invoke({}) == "checked"
 
 
-def test_a_run_reports_its_summary_and_tool_calls(editor, scripted_agent_chat):
-    chat = scripted_agent_chat(scripts=[[("describe_page", {}), ("set_title", {"title": "X"}), "CHANGED: set the title"]])
-    run = run_agent(chat, make_tools(editor, TOOLTIP, lambda: ""), [{"type": "text", "text": "brief"}])
+def test_a_save_reports_the_validators_errors(files):
+    tools = _tools(files, errors=["REFERENCE page 'P', visual 'V': 'Orders'[Proffit] isn't a column of Orders"])
+    original = tools["read_visual"].invoke({"visual": TOOLTIP})
+    result = tools["write_visual"].invoke({"visual": TOOLTIP, "content": original})
+    assert "the report now has 1 error(s); fix them" in result and "Proffit" in result
+
+
+def test_other_pages_can_be_read_and_written_by_name(files):
+    # A viz-in-tooltip link is set on the host page's visual, not on the tooltip page itself.
+    tools = _tools(files)
+    host = json.loads(tools["read_visual"].invoke({"visual": "profit ratio by geography", "page_name": "profit ratio by geography"}))
+    host["visual"].setdefault("visualContainerObjects", {})["visualTooltip"] = [{"properties": {}}]
+    result = tools["write_visual"].invoke({
+        "visual": host["name"], "content": json.dumps(host), "page_name": "profit ratio by geography",
+    })
+    assert result.startswith("Saved visual")
+    page = json.loads(tools["read_page"].invoke({}))
+    page.update({"type": "Tooltip", "visibility": "HiddenInViewMode"})
+    assert tools["write_page"].invoke({"content": json.dumps(page)}).startswith("Saved page")
+    assert {p["page"]: p["type"] for p in files.pages()}[TOOLTIP] == "Tooltip"
+
+
+def test_a_new_name_creates_a_visual_on_the_page(files):
+    tools = _tools(files)
+    template = json.loads(tools["read_visual"].invoke({"visual": TOOLTIP}))
+    template["name"] = "subtitleBox01"
+    result = tools["write_visual"].invoke({"visual": "subtitleBox01", "content": json.dumps(template)})
+    assert result.startswith("Created visual 'subtitleBox01'")
+    assert "subtitleBox01" in {v["name"] for p in files.pages() if p["page"] == TOOLTIP for v in p["visuals"]}
+
+
+@pytest.mark.parametrize(
+    ("call", "message"),
+    [
+        (lambda t, v: t["write_visual"].invoke({"visual": TOOLTIP, "content": "{not json"}), "not valid JSON"),
+        (lambda t, v: t["write_visual"].invoke({"visual": TOOLTIP, "content": "[1, 2]"}), "one JSON object"),
+        (lambda t, v: t["write_visual"].invoke({"visual": TOOLTIP, "content": json.dumps({**v, "name": "other"})}),
+         "can't be renamed"),
+        (lambda t, v: t["write_visual"].invoke({"visual": "../../escape", "content": json.dumps(v)}), "new name of letters"),
+        (lambda t, v: t["write_visual"].invoke({"visual": "newOne", "content": json.dumps(v)}), 'must have "name"'),
+        (lambda t, v: t["read_visual"].invoke({"visual": "x", "page_name": "Nowhere"}), "no page named"),
+        (lambda t, v: t["write_page"].invoke({"content": json.dumps({"name": "renamed"})}), "can't be renamed"),
+    ],
+)
+def test_writes_stay_inside_the_reports_files(files, call, message):
+    tools = _tools(files)
+    visual = json.loads(tools["read_visual"].invoke({"visual": TOOLTIP}))
+    before = sorted(p.as_posix() for p in files.root.rglob("*.json"))
+    result = call(tools, visual)
+    assert result.startswith("Refused:") and message in result
+    assert sorted(p.as_posix() for p in files.root.rglob("*.json")) == before  # nothing new written
+
+
+def test_lookups_say_when_microsofts_cli_is_missing(files, monkeypatch):
+    monkeypatch.setattr(agent, "run_report_author", lambda *args: None)
+    assert _tools(files)["lookup_visual_type"].invoke({"visual_type": "areaChart"}).startswith("Lookup unavailable")
+
+
+@pytest.mark.external("powerbi-report-author")
+def test_lookups_answer_from_microsofts_cli(files):
+    tools = _tools(files)
+    roles = json.loads(tools["lookup_visual_type"].invoke({"visual_type": "stackedAreaChart"}))["roles"]
+    assert roles["Tooltips"]["kind"] == "Measure"
+    literal = json.loads(tools["encode_literal"].invoke({"value": "Profit Ratio by City", "kind": "string"}))
+    assert "'Profit Ratio by City'" in json.dumps(literal)
+    assert "legend" in tools["lookup_formatting"].invoke({"visual_type": "areaChart"})
+
+
+def test_a_run_reports_its_summary_and_tool_calls(files, scripted_agent_chat):
+    chat = scripted_agent_chat(scripts=[[
+        ("read_visual", {"visual": TOOLTIP}),
+        ("write_visual", lambda results: {"visual": TOOLTIP, "content": _retitled(results[-1], "X")}),
+        "CHANGED: set the title",
+    ]])
+    run = run_agent(chat, list(_tools(files).values()), [{"type": "text", "text": "brief"}])
     assert (run.summary, run.tool_calls, run.error) == ("set the title", 2, None)
+    assert files.overview(TOOLTIP)["visuals"][0]["title"] == "X"
 
 
-def test_a_run_stops_at_its_budget(editor, scripted_agent_chat):
-    looping = scripted_agent_chat(scripts=[[("describe_page", {})]])  # never finishes
-    run = run_agent(looping, make_tools(editor, TOOLTIP, lambda: ""), [{"type": "text", "text": "b"}], max_steps=3)
+def test_a_run_stops_at_its_budget(files, scripted_agent_chat):
+    looping = scripted_agent_chat(scripts=[[("list_pages", {})]])  # never finishes
+    run = run_agent(looping, list(_tools(files).values()), [{"type": "text", "text": "b"}], max_steps=3)
     assert run.error == "stopped after 3 model calls (budget)"
 
 
-def test_a_provider_error_ends_the_run_without_raising(editor, scripted_agent_chat):
+def test_a_provider_error_ends_the_run_without_raising(files, scripted_agent_chat):
     class Failing(scripted_agent_chat):
         def _generate(self, *args, **kwargs):
             raise RuntimeError("Error code: 400 - content filter")
 
-    run = run_agent(Failing(scripts=[]), make_tools(editor, TOOLTIP, lambda: ""), [{"type": "text", "text": "b"}])
+    run = run_agent(Failing(scripts=[]), list(_tools(files).values()), [{"type": "text", "text": "b"}])
     assert run.error and "400" in run.error
 
 
-def test_several_tool_calls_in_one_message_all_land(editor, scripted_agent_chat):
-    # The agent's tool node runs one message's calls on parallel threads; these three all rewrite
-    # the same visual.json, so without the tools' lock they would read each other's partial writes.
-    edits = [
-        ("set_title", {"title": "Profit Ratio by City"}),
-        ("set_sort", {"field": "profit ratio:measure", "direction": "ascending"}),
-        ("bind_field", {"role": "Tooltips", "field": "Profit:sum"}),
-    ]
-    for _ in range(5):
-        chat = scripted_agent_chat(scripts=[[edits, "CHANGED: three edits"]])
-        run = run_agent(chat, make_tools(editor, TOOLTIP, lambda: ""), [{"type": "text", "text": "b"}])
-        assert run.error is None and run.tool_calls == 3
-        assert not any(r.startswith("Refused") or "Error" in r for r in chat.tool_results[:2])
-    page = editor.describe(TOOLTIP)
-    assert page["title"] == "Profit Ratio by City"
-    assert page["sort"] == ["profit ratio:measure ascending"]
-    assert page["roles"]["Tooltips"] == ["Profit:sum"]
+def test_several_saves_in_one_message_all_land(files, scripted_agent_chat):
+    # The agent's tool node runs one message's calls on parallel threads; the tools' lock keeps
+    # each read-and-save whole.
+    visuals = [v for p in files.pages() if p["page"] == DASHBOARD for v in p["visuals"] if v["visualType"] != "slicer"]
+    texts = {v["name"]: files.read_visual(DASHBOARD, v["name"]) for v in visuals}
+    saves = [("write_visual", {"visual": name, "content": _retitled(text, f"T{i}"), "page_name": DASHBOARD})
+             for i, (name, text) in enumerate(texts.items())]
+    chat = scripted_agent_chat(scripts=[[saves, "CHANGED: retitled"]])
+    run = run_agent(chat, list(_tools(files).values()), [{"type": "text", "text": "b"}])
+    assert run.error is None and run.tool_calls == len(saves)
+    titles = {v["title"] for v in files.overview(DASHBOARD)["visuals"]}
+    assert {f"T{i}" for i in range(len(saves))} <= titles

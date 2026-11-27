@@ -52,10 +52,17 @@ now, GitHub Actions for CI, and an agent that edits PBIR/TMDL files directly. In
      fields, set visual type, bind / remove a field, set title, set sort, make a tooltip page and
      link it from its host visual. Checked against the catalog and the model; the edited Book1
      report passes both validators. Committing or reverting is the review step's job (4.4).
+     *(Replaced in 4.4b by direct JSON edits; `refine/edits.py` is gone.)*
    - [x] *4.4 Agent loop* *(done 2026-11-26)*: `open_desktop` → `assess` (with the visual
      judge) → `pick_item` → `fix_item` (agent, `create_agent`) → `review_item` (commit, or
      revert + one retry) → `finalize_refine`; `--reference-images`, `--no-desktop`. Book1
      before/after in DEVLOG.
+   - [x] *4.4b Direct PBIR edits* *(done 2026-11-27)*: the agent reads and writes the report's
+     `page.json` / `visual.json` files whole (`refine/report_files.py`), looks things up with
+     Microsoft's `powerbi-report-author` (catalog, formatting, literals), and every save is
+     validated, the errors going back to it. New `validate/report_refs.py`: every field the
+     report uses must exist in the model, and unknown or retiring visual types are errors (the
+     PBIR validator checks neither); it runs in `validate_pbir` too. The typed edits are gone.
    - [ ] *4.5 Model-side tools*: measures and columns through the MCP server — the date level
      (`Order Date:month`), row counts (`Orders:rowcount`) and the dimension calc on the colour
      shelf (`Order Profitable?`) are now most of what the agent reports it can't fix.
@@ -82,10 +89,10 @@ doesn't diff every file.
   review then had no picture and, the item being judge-only, refused the change — safe, but a
   possibly good change was lost. Find out whether filled maps render at all in this Desktop
   (map visuals can be disabled in Options › Security) before adding a retry.
-- [ ] **Edits can leave a required role empty.** *(seen 2026-11-26)* The agent switched a visual
-  to `stackedAreaChart` without its required `Category`; the PBIR validator caught it and the
-  review refused the change. `set_visual_type` / `remove_field` could say so at once (the
-  catalog knows the required roles), saving the agent a refused attempt.
+- [x] **Edits can leave a required role empty.** *(seen 2026-11-26; resolved 2026-11-27)* The
+  agent switched a visual to `stackedAreaChart` without its required `Category`; the PBIR
+  validator caught it only in the review, which refused the change. Since 4.4b every save is
+  validated and the error goes straight back to the agent, which can repair it before finishing.
 - [ ] **The visual judge misses date granularity.** *(seen 2026-11-26)* It called Book1's daily
   area charts "monthly" in both runs (Power BI's axis labels are monthly even when the points are
   daily). Options: tell it to judge granularity by the number of points, or leave granularity to

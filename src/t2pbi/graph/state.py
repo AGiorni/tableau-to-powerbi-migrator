@@ -96,7 +96,7 @@ class MigrationContext:
     refine: bool = False
     # Agent runs in one refinement (a retry of a refused page counts), and model calls per run.
     max_refine_items: int = 10
-    max_agent_steps: int = 15
+    max_agent_steps: int = 25
     # Open Power BI Desktop during refinement to screenshot pages and have the judge compare them
     # with the user's Tableau screenshots. Off (or Desktop missing), the review uses the checks alone.
     use_desktop: bool = True

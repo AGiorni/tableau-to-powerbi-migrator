@@ -122,6 +122,8 @@ class ScriptedAgentChat(BaseChatModel):
 
     Each run's script is a list of steps: ``(tool_name, args)`` makes a tool call, a list of such
     pairs makes several calls in one message (as real models do), a string is the final answer.
+    ``args`` may be a function of the tool results so far (``tool_results``, newest last), so a
+    script can read a file and write back an edited copy.
     Calls outside the agent (DAX translation, visual routing) get an empty answer, as from a model
     that can't help, so the deterministic fallbacks apply.
     """
@@ -159,7 +161,8 @@ class ScriptedAgentChat(BaseChatModel):
         else:
             calls = step if isinstance(step, list) else [step]
             message = AIMessage(content="", tool_calls=[
-                {"name": name, "args": args, "id": f"c{self._run}.{self._step}.{i}"}
+                {"name": name, "args": args(self.tool_results) if callable(args) else args,
+                 "id": f"c{self._run}.{self._step}.{i}"}
                 for i, (name, args) in enumerate(calls)
             ])
         return ChatResult(generations=[ChatGeneration(message=message)])
