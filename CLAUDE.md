@@ -94,7 +94,9 @@ marked `@pytest.mark.external("<tool>")` and skipped without it; `T2PBI_REQUIRE_
 CI) makes them fail instead.
 
 CI (`.github/workflows/ci.yml`, GitHub Actions on Windows) installs every tool and runs the
-checks above on each push to `main` and each pull request. It can't run anything that needs Power
+checks above. It runs only when started by hand (`gh workflow run ci.yml`, or the Actions tab):
+push and pull-request triggers are off for now, so the local checks are what gate a commit; don't
+wait for CI after a push. It can't run anything that needs Power
 BI Desktop (screenshots, DAX on data); run those locally. Running against Power BI Desktop needs, once per
 machine: Desktop signed in, and for the Store version `PBI_DESKTOP_PATH` set to `PBIDesktop.exe`
 inside the Store package folder. The Authoring MCP server only starts if the operator has accepted

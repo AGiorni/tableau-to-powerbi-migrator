@@ -1,14 +1,15 @@
-# Lint and test every push to main and every pull request, with all external tools installed:
+# Lint and test with all external tools installed (manual runs only for now, see below):
 # Microsoft's pinned Power BI tools (tools/package.json) and the TMDL validator (.NET).
 # T2PBI_REQUIRE_TOOLS makes any test that needs a missing tool fail instead of skip.
 # Not covered here: anything needing Power BI Desktop (screenshots, DAX on data, the agent).
 
 name: CI
 
+# Manual only (2026-11-27, the user's decision): run it from the Actions tab or with
+# `gh workflow run ci.yml`. To run it on every push again, restore:
+#   push: {branches: [main]}
+#   pull_request:
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
