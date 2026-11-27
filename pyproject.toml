@@ -29,6 +29,12 @@ dev = [
     "pytest>=8.2",
     "ruff>=0.5",
 ]
+# Traces in a local Arize Phoenix (T2PBI_PHOENIX=true; scripts/phoenix_server.py).
+trace = [
+    "arize-phoenix>=22",
+    "arize-phoenix-otel>=0.17",
+    "openinference-instrumentation-langchain>=0.1.90",
+]
 
 [project.scripts]
 t2pbi = "t2pbi.cli:main"

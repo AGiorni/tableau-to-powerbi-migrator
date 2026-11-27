@@ -81,6 +81,24 @@ def load_azure_openai_config() -> AzureOpenAIConfig:
     )
 
 
+@dataclass(frozen=True)
+class PhoenixConfig:
+    """Tracing to a local Arize Phoenix (t2pbi.observe.phoenix)."""
+
+    enabled: bool = False
+    endpoint: str = "http://localhost:6006"
+    project: str = "t2pbi"
+
+
+def load_phoenix_config() -> PhoenixConfig:
+    load_env_file()
+    return PhoenixConfig(
+        enabled=_flag("T2PBI_PHOENIX"),
+        endpoint=_setting("T2PBI_PHOENIX_ENDPOINT", "http://localhost:6006").rstrip("/"),
+        project=_setting("T2PBI_PHOENIX_PROJECT", "t2pbi"),
+    )
+
+
 def _flag(name: str) -> bool:
     raw = _setting(name, "false").strip().lower()
     if raw in ("1", "true", "yes"):

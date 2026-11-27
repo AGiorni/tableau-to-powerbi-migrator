@@ -125,3 +125,35 @@ t2pbi migrate .\samples\Book1\Book1.twb --out .\out --refine --reference-images 
 - Desktop needs the Desktop Bridge (`npm ci` in `tools/`) and the Authoring MCP's EULA accepted
   by you (`PBI_MODELING_MCP_ACCEPT_EULA=true`) to load the data; without them, or with
   `--no-desktop`, the review uses the checks alone.
+
+### Watching a run
+
+A migration prints a live log to the terminal (stderr) as it goes: each graph step with its time,
+and inside the refinement agent each model call (against its budget), tool call and save result,
+then the review's decision. `--quiet` turns it off.
+
+```
+> fix_item: Key Performance Indicators (6 problem(s))
+    model call 1/25
+      -> read_visual(visual='Key Performance Indicators')
+      <- read_visual: 4,531 characters
+    model call 2/25
+      -> write_visual(visual='Key Performance Indicators', content=<1,990 chars>)
+      <- write_visual: Saved visual 'e2805c3b7e3d4e5aa089' on page 'Key Performance Indicators'. Validation: no errors.
+  done fix_item (6.4s, 4 model call(s), 0 tokens)
+> review_item: Key Performance Indicators
+  * Key Performance Indicators: Kept as commit b42c80b: set the title
+```
+
+For the full detail (every prompt, image, answer and tool result, browsable as a tree) send the
+traces to a local [Arize Phoenix](https://github.com/Arize-ai/phoenix):
+
+```powershell
+pip install -e ".[trace]"
+python scripts\phoenix_server.py     # leave it running; open http://localhost:6006
+# in .env: T2PBI_PHOENIX=true, then run a migration as usual
+```
+
+The launcher starts Phoenix with its usage telemetry off and listening on localhost only:
+traces hold the prompts, the report JSON and the screenshots, which is client data for a
+client workbook.

@@ -11,6 +11,8 @@ from t2pbi.config import load_env_file
 from t2pbi.graph import MigrationContext, migrate
 from t2pbi.llm import build_chat_model
 from t2pbi.mapping.report import IssueSeverity
+from t2pbi.observe import LiveLog
+from t2pbi.observe.phoenix import enable_phoenix
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -55,6 +57,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="With --refine: don't open Power BI Desktop; review changes with the checks alone.",
     )
+    migrate_cmd.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Don't print the live log (each step, and the agent's model and tool calls) to stderr.",
+    )
 
     args = parser.parse_args(argv)
     return args.handler(args)
@@ -68,12 +75,15 @@ def _run_migrate(args: argparse.Namespace) -> int:
     if args.refine and chat_model is None:
         print("--refine needs Azure OpenAI (T2PBI_AZURE_OPENAI_* in .env).", file=sys.stderr)
         return 2
+    enable_phoenix()  # traces to a local Phoenix, if T2PBI_PHOENIX=true
+    defaults = MigrationContext()
     context = MigrationContext(
         chat_model=chat_model,
         run_output_validation=not args.no_validate,
         refine=args.refine,
         use_desktop=not args.no_desktop,
         reference_images=args.reference_images,
+        callbacks=() if args.quiet else (LiveLog(max_agent_steps=defaults.max_agent_steps),),
     )
     result = migrate(args.input, args.out, context)
 

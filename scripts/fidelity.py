@@ -35,6 +35,8 @@ from t2pbi.fidelity.references import match_screenshots
 from t2pbi.graph import MigrationContext, migrate
 from t2pbi.ingest import load_workbook
 from t2pbi.llm import build_chat_model
+from t2pbi.observe import LiveLog
+from t2pbi.observe.phoenix import enable_phoenix
 from t2pbi.parse import parse_workbook
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +58,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Migrate with refinement (implies --llm): the agent fixes pages, then the result is scored.",
     )
     parser.add_argument(
+        "--quiet", action="store_true",
+        help="Don't print the live log (each step, and the agent's model and tool calls) to stderr.",
+    )
+    parser.add_argument(
         "--derived", action="store_true",
         help="Also score against expectations derived from the workbook itself (what the agent sees).",
     )
@@ -68,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
         print("--llm given but no Azure OpenAI configured (T2PBI_AZURE_OPENAI_*).", file=sys.stderr)
         return 2
 
+    enable_phoenix()  # traces to a local Phoenix, if T2PBI_PHOENIX=true
+    live = () if args.quiet else (LiveLog(max_agent_steps=MigrationContext().max_agent_steps),)
     out_root = Path(args.out)
     report: dict = {}
     regressions = 0
@@ -83,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
                 run_output_validation=args.refine,  # refinement runs after validation
                 refine=args.refine,
                 reference_images=str(references) if references.is_dir() else None,
+                callbacks=live,
             ),
         )
         if args.refine:

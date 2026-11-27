@@ -147,7 +147,7 @@ def migrate(
     try:
         final = build_graph().invoke(
             MigrationState(input_path=str(input_path), out_dir=str(out_dir)),
-            {"recursion_limit": recursion_limit(context)},
+            {"recursion_limit": recursion_limit(context), "callbacks": list(context.callbacks)},
             context=context,
         )
     finally:

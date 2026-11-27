@@ -104,3 +104,6 @@ class MigrationContext:
     # images (t2pbi.fidelity.references). Only pages with some are compared with a picture;
     # without any, Desktop isn't opened.
     reference_images: str | None = None
+    # LangChain callback handlers that watch the run (t2pbi.observe.LiveLog for the live log);
+    # migrate() passes them to the graph, which hands them every node's events.
+    callbacks: tuple[Any, ...] = ()

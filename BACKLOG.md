@@ -79,6 +79,11 @@ agent's work list, separate from the report's `issues`); the output project as a
 project; and a baseline normalized through Microsoft's TMDL serializer, so the first model edit
 doesn't diff every file.
 
+- [ ] **Shared traces for a team.** *(raised 2026-11-27)* Phoenix runs per developer, on
+  localhost (DEVLOG 2026-11-27). If several people need to see the same runs, a Langfuse
+  instance self-hosted on a company server is the next step: it takes the same OpenTelemetry
+  spans. Decide where it runs and who may see client traces first.
+
 - [ ] **Use the engine's DAX validation in the repair loop.** When the Authoring MCP server and a
   Desktop instance are available, `dax_query_operations Validate` catches unknown columns and
   real syntax errors that `validate/dax.py`'s bracket check misses; feed its message back to the

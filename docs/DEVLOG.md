@@ -9,6 +9,52 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-27 — Watching a run: a live log, and opt-in traces in a local Phoenix
+
+**Why.** A real `--refine` run on Book1 takes about 20 minutes and printed nothing until the end;
+the only way to follow it was the output folder's git log.
+
+**Two layers.**
+- *A live log, always on* (`--quiet` turns it off), in `observe/live.py`. It's a LangChain
+  callback handler that `migrate()` passes in the graph's `config["callbacks"]`, taken from
+  `MigrationContext.callbacks` (context, not state: it's a client, not data). LangGraph hands it
+  every event, including those from inside a node. A probe of a scripted run showed how to tell
+  them apart: a graph step is a chain whose name equals its `langgraph_node` with no
+  `checkpoint_ns`; a router has another name; a call inside a step carries
+  `"<step>:<id>"` as its `checkpoint_ns`. It prints each step, the agent's model calls against
+  the budget, each tool call (a whole visual.json shown by its size), save results, the refine
+  issues as they're produced, and per-step time and tokens. It writes to stderr in plain ASCII
+  (the Windows console's cp1252 couldn't print ▶ or ✓; the first version lost those lines), and
+  replaces any character the console can't show. A printing error never stops a run.
+- *Traces in Arize Phoenix, opt-in* (`T2PBI_PHOENIX=true`), in `observe/phoenix.py`.
+  OpenInference's LangChain instrumentation sends every step, model call (prompt, images,
+  answer, tokens) and tool call as OpenTelemetry spans; a scripted run produced 50, with the
+  graph and agent structure. It's skipped with a message when the `trace` extra isn't installed
+  or no server listens.
+
+**Why Phoenix, not LangSmith or Langfuse.** Traces carry everything the model saw (prompts,
+report JSON, Tableau and Power BI screenshots), which is client data for a client workbook, and
+model data has so far gone only to the user's own Azure tenant.
+- LangSmith is the easiest (environment variables only), but it's LangChain's cloud;
+  self-hosting is enterprise-only.
+- Langfuse self-hosts for free but needs Docker, which isn't installed here (and Docker Desktop
+  needs a paid licence in large companies).
+- Phoenix is a `pip install` and runs locally. Both Phoenix and Langfuse take OpenTelemetry, so
+  moving to a shared Langfuse later is cheap.
+
+**Found on the way: Phoenix's server sends usage telemetry by default.** Its config documents
+FullStory session recording and Scarf pixels in the web UI, on unless `PHOENIX_TELEMETRY_ENABLED`
+is false. Session recording of a UI that displays traces would defeat keeping them local.
+`scripts/phoenix_server.py` always starts it with `PHOENIX_TELEMETRY_ENABLED=false` and
+`PHOENIX_ALLOW_EXTERNAL_RESOURCES=false`, on 127.0.0.1, with its database in `out/phoenix/`.
+Its boot message confirmed "Telemetry: Disabled".
+
+**Verified.** 198 tests pass (the `trace` extra moved `langchain-core` to 1.6.0; nothing broke);
+output IDENTICAL (snapshot); a scripted refinement printed the log above and landed as 50 spans
+in Phoenix's `t2pbi` project.
+
+---
+
 ## 2026-11-27 — Step 4.4b: the agent edits PBIR JSON directly (typed edits removed)
 
 **Decision (the user's).** This reverses 4.3's "typed edits, not free-form JSON patches". The
