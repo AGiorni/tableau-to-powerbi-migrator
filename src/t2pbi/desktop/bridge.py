@@ -64,8 +64,11 @@ def _run(*args: str, timeout: float = 120.0) -> dict:
     if found:
         env["PBI_DESKTOP_PATH"] = str(found)
     try:
+        # The CLI prints UTF-8 (JSON naming the user's own files and pages); Windows would decode it
+        # with the console code page and fail on the first character outside it.
         proc = subprocess.run(
-            command(exe, *args), capture_output=True, text=True, timeout=timeout, check=False, env=env
+            command(exe, *args), capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout, check=False, env=env,
         )
     except subprocess.TimeoutExpired as exc:
         raise BridgeError(f"{_CLI} {args[0]} timed out after {timeout:.0f}s") from exc

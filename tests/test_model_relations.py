@@ -89,3 +89,20 @@ def test_relationships_tmdl_rendered(sales_sql_twb, mapped):
     assert "relationship" in rel_tmdl
     assert "fromColumn: Orders.CustomerID" in rel_tmdl
     assert "toColumn: Customers.CustomerID" in rel_tmdl
+
+
+def test_a_readded_key_column_loads_its_source_column():
+    # Tableau renames a column that's in two logical tables ("Order ID (Returns)"); when that key is
+    # hidden, it's added back for the relationship, and must load the source's "Order ID", or it
+    # comes through blank and Power BI refuses the many-to-one relationship on refresh.
+    from t2pbi.ir.powerbi_ir import PBIColumn, PBIDataType, PBIRelationship, PBITable
+    from t2pbi.mapping.model_mapper import _ensure_relationship_columns
+
+    orders = PBITable(name="Orders", columns=[PBIColumn(name="Order ID", data_type=PBIDataType.STRING,
+                                                        source_column="Order ID")])
+    returns = PBITable(name="Returns", columns=[])
+    relationship = PBIRelationship(name="r", from_table="Orders", from_column="Order ID",
+                                   to_table="Returns", to_column="Order ID (Returns)")
+    _ensure_relationship_columns([orders, returns], [relationship], {"Order ID (Returns)": "Order ID"})
+    key = returns.columns[0]
+    assert (key.name, key.source_column, key.is_hidden) == ("Order ID (Returns)", "Order ID", True)

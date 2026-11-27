@@ -4,7 +4,8 @@
 
     START
       -> ingest
-      -> map_model
+           [packaged_data]      -> unpack_extracts -> map_model
+           [source_connections] -> map_model
            [translate]            -> translate_expressions -> validate_expressions
                                                                  [repair] -> translate_expressions
                                                                  [done]   -> map_visuals
@@ -74,6 +75,7 @@ def build_graph() -> MigrationGraph:
     graph = StateGraph(MigrationState, context_schema=MigrationContext)
 
     graph.add_node("ingest", nodes.ingest)
+    graph.add_node("unpack_extracts", nodes.unpack_extracts)
     graph.add_node("map_model", nodes.map_model)
     graph.add_node("translate_expressions", nodes.translate_expressions)
     graph.add_node("validate_expressions", nodes.validate_expressions)
@@ -92,7 +94,12 @@ def build_graph() -> MigrationGraph:
     graph.add_node("finalize_refine", nodes.finalize_refine)
 
     graph.add_edge(START, "ingest")
-    graph.add_edge("ingest", "map_model")
+    graph.add_conditional_edges(
+        "ingest",
+        nodes.route_packaged_data,
+        {"packaged_data": "unpack_extracts", "source_connections": "map_model"},
+    )
+    graph.add_edge("unpack_extracts", "map_model")
     graph.add_conditional_edges(
         "map_model",
         nodes.route_expressions,

@@ -105,6 +105,14 @@ Run a migration (deterministic path, no LLM calls):
 t2pbi migrate .\samples\Book1\Book1.twb --out .\out --no-llm --report .\out\report.json
 ```
 
+The model keeps each workbook's own connections, so the migrated report refreshes from the
+same live source. A packaged workbook (`.twbx`) may also carry its data as a Tableau extract;
+for a preview or testing when that source can't be reached (e.g. a workbook downloaded from
+Tableau Public, whose connection names a file on its author's machine), `--use-packaged-data`
+unpacks each extract table to `<out>\data\*.csv` and loads those instead. That's a snapshot that
+won't refresh from the source. It needs Tableau's Hyper API (`pip install -e ".[extract]"`).
+`data\` is in the project's `.gitignore`: it's the workbook's data.
+
 With `--refine` (needs Azure OpenAI, with a deployment that takes tool calls and images), a
 refinement agent then fixes what the first pass got wrong, one page at a time:
 

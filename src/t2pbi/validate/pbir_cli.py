@@ -37,7 +37,10 @@ def run_report_author(*cli_args: str, timeout: float = 120.0) -> dict | None:
     args = command(exe, *cli_args)
     try:
         # check=False: a validation failure is a non-zero exit but still prints the diagnostics.
-        proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+        # UTF-8: the JSON names the report's own pages and files; the Windows code page can't decode them all.
+        proc = subprocess.run(
+            args, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False
+        )
     except (OSError, subprocess.SubprocessError):
         return None
 

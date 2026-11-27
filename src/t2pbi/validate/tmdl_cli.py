@@ -35,6 +35,8 @@ def run_tmdl_validation(definition_dir: str | Path, timeout: float = 120.0) -> d
             [*prefix, str(definition_dir)],
             capture_output=True,
             text=True,
+            encoding="utf-8",  # table and column names can be any language
+            errors="replace",
             timeout=timeout,
             check=False,  # exit 1 means "errors found" and still prints the diagnostics
             env=dotnet_env(),

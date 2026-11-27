@@ -26,7 +26,7 @@ from t2pbi.fidelity.expectations import SheetExpectation
 from t2pbi.fidelity.project import Project
 from t2pbi.fidelity.references import match_screenshots
 from t2pbi.graph.state import MigrationContext, MigrationState
-from t2pbi.ingest import load_workbook
+from t2pbi.ingest import extracts, load_workbook
 from t2pbi.mapping import expression_translator, model_mapper, visual_mapper
 from t2pbi.mapping.report import IssueSeverity, MigrationReport
 from t2pbi.mapping.visual_router_llm import LLMVisualRouter
@@ -52,10 +52,51 @@ from t2pbi.validate.report_refs import check_report_references
 # --------------------------------------------------------------------------------------------
 
 
-def ingest(state: MigrationState) -> dict:
+def ingest(state: MigrationState, runtime: Runtime[MigrationContext]) -> dict:
     """Read the .twb/.twbx and parse it into the Tableau IR."""
 
-    return {"workbook": parse_workbook(load_workbook(state.input_path))}
+    workbook = parse_workbook(load_workbook(state.input_path))
+    report = MigrationReport()
+    if not runtime.context.use_packaged_data and extracts.packaged_extracts(workbook, state.input_path):
+        report.add(
+            IssueSeverity.INFO, "ingest", "extract",
+            "The package also carries its data as a Tableau extract. The model keeps the workbook's "
+            "own connections (the live source); for a preview with the packaged data instead, run "
+            "with --use-packaged-data.",
+        )
+    return {"workbook": workbook, "issues": report.issues}
+
+
+def unpack_extracts(state: MigrationState) -> dict:
+    """Write the data a packaged workbook carries (its Tableau extracts) as CSV in the output
+    folder, so the model loads it instead of the workbook's own connections. Opt-in
+    (``route_packaged_data``): a snapshot never refreshes, so a real migration keeps the live
+    source. A ``.twb``, or a package without extracts, is left as it is."""
+
+    assert state.workbook is not None
+    report = MigrationReport()
+    try:
+        exported = extracts.export_extracts(state.workbook, state.input_path, state.out_dir)
+    except extracts.ExtractsUnavailable as exc:
+        report.add(
+            IssueSeverity.WARNING, "ingest", "extract",
+            f"Data not unpacked: {exc}. The model keeps the workbook's own connections, which point "
+            "at its author's files, so the report opens without data.",
+        )
+        return {"issues": report.issues}
+    except Exception as exc:  # noqa: BLE001 - a damaged extract degrades to the workbook's own connections
+        report.add(IssueSeverity.WARNING, "ingest", "extract", f"Data not unpacked: {type(exc).__name__}: {exc}.")
+        return {"issues": report.issues}
+    captions = {ds.name: ds.display_name for ds in state.workbook.datasources}
+    out = Path(state.out_dir).resolve()
+    for ds_name, tables in exported.items():
+        for name, table in tables.items():
+            report.add(
+                IssueSeverity.INFO, "ingest", captions.get(ds_name, ds_name),
+                f"Unpacked the workbook's extract table {name!r}: {table.rows:,} rows to "
+                f"{Path(table.path).relative_to(out).as_posix()}.",
+            )
+    return {"extracts": exported, "issues": report.issues}
 
 
 def map_model(state: MigrationState) -> dict:
@@ -63,7 +104,7 @@ def map_model(state: MigrationState) -> dict:
 
     assert state.workbook is not None
     report = MigrationReport()
-    result = model_mapper.map_model(state.workbook, report)
+    result = model_mapper.map_model(state.workbook, report, state.extracts)
     return {
         "model": result.model,
         "pending_expressions": result.pending_expressions,
@@ -624,6 +665,7 @@ ExpressionRoute = Literal["translate", "no_llm", "nothing_to_translate"]
 RepairRoute = Literal["repair", "done"]
 OutputValidationRoute = Literal["validate", "skip"]
 RefineRoute = Literal["refine", "done"]
+DataRoute = Literal["packaged_data", "source_connections"]
 DesktopRoute = Literal["desktop", "checks_only"]
 WorkRoute = Literal["work", "done"]
 
@@ -651,6 +693,13 @@ def route_output_validation(
     """After assembly: run the external validators (TMDL, then PBIR) unless the run disabled them."""
 
     return "validate" if runtime.context.run_output_validation else "skip"
+
+
+def route_packaged_data(state: MigrationState, runtime: Runtime[MigrationContext]) -> DataRoute:
+    """After ingest: load a .twbx's packaged data (unpack its extracts) only when the run asks
+    for it; otherwise the model keeps the workbook's own connections."""
+
+    return "packaged_data" if runtime.context.use_packaged_data else "source_connections"
 
 
 def route_refine(state: MigrationState, runtime: Runtime[MigrationContext]) -> RefineRoute:

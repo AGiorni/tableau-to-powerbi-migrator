@@ -10,7 +10,9 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
+from t2pbi.ingest.extracts import ExportedTable, table_for
 from t2pbi.ir.powerbi_ir import (
     Cardinality,
     CrossFilter,
@@ -34,8 +36,9 @@ from t2pbi.ir.tableau_ir import (
     TableauRole,
     TableauWorkbook,
     counted_table,
+    strip_brackets,
 )
-from t2pbi.mapping.powerquery import build_m_source
+from t2pbi.mapping.powerquery import build_m_source, csv_file_source
 from t2pbi.mapping.report import IssueSeverity, MigrationReport
 
 _DATATYPE_MAP: dict[TableauDataType, PBIDataType] = {
@@ -74,14 +77,22 @@ class MappingResult:
     pending_expressions: dict[str, TableauCalculatedField] = field(default_factory=dict)
 
 
-def map_model(workbook: TableauWorkbook, report: MigrationReport) -> MappingResult:
-    """Map a Tableau workbook IR to a Power BI model IR (data-model structure only)."""
+def map_model(
+    workbook: TableauWorkbook,
+    report: MigrationReport,
+    extracts: dict[str, dict[str, ExportedTable]] | None = None,
+) -> MappingResult:
+    """Map a Tableau workbook IR to a Power BI model IR (data-model structure only).
+
+    ``extracts``: the CSV files a packaged workbook's extracts were unpacked to (datasource name
+    -> extract table -> file). A table they cover loads from its file instead of the workbook's
+    own connection, which points at the author's machine."""
 
     model = PBIModel(name=workbook.source_name)
     pending: dict[str, TableauCalculatedField] = {}
 
     for ds in workbook.datasources:
-        tables, relationships = _map_datasource(ds, report, pending)
+        tables, relationships = _map_datasource(ds, report, pending, (extracts or {}).get(ds.name, {}))
         kept = [t for t in tables if t.columns or t.measures]
         for skipped in (t for t in tables if not (t.columns or t.measures)):
             report.add(
@@ -149,6 +160,7 @@ def _map_datasource(
     ds: TableauDatasource,
     report: MigrationReport,
     pending: dict[str, TableauCalculatedField],
+    exported: dict[str, ExportedTable] | None = None,
 ) -> tuple[list[PBITable], list[PBIRelationship]]:
     """Map one datasource to one or more tables (one per relation) plus relationships."""
 
@@ -181,32 +193,70 @@ def _map_datasource(
         )
 
     relationships = _map_joins(ds, single_table, report)
-    _ensure_relationship_columns(tables, relationships)
+    sources = {strip_brackets(name): origin.source_column for name, origin in ds.column_origins.items()
+               if origin.source_column}
+    _ensure_relationship_columns(tables, relationships, sources)
 
     # Build partitions after columns (incl. hidden keys) are final so M types the whole table.
     for table in tables:
         relation, connection = table_sources[table.name]
-        table.partition = _build_partition(relation, connection, table, report)
+        unpacked = table_for(relation.name, exported, single_table) if exported else None
+        if unpacked is not None:
+            table.partition = _extract_partition(table, unpacked, report)
+        else:
+            if exported:
+                report.add(
+                    IssueSeverity.WARNING, "model", table.name,
+                    "The workbook's extract has no table for this one; it keeps the workbook's own "
+                    "connection, which points at the author's files.",
+                )
+            table.partition = _build_partition(relation, connection, table, report)
 
     return tables, relationships
 
 
+def _extract_partition(table: PBITable, unpacked: ExportedTable, report: MigrationReport) -> PBIPartition:
+    """Load a table from the CSV its extract table was unpacked to. Each column is matched to
+    the file's header by its source name, else its own name; one the file lacks stays in the
+    model, filled with blanks, and is reported."""
+
+    header = set(unpacked.columns)
+    present, absent = [], []
+    for i, column in enumerate(table.columns):
+        if column.source_column not in header and column.name in header:
+            column = column.model_copy(update={"source_column": column.name})
+            table.columns[i] = column
+        (present if column.source_column in header else absent).append(column)
+    if absent:
+        report.add(
+            IssueSeverity.WARNING, "model", table.name,
+            "Not in the workbook's extract, so left blank: " + ", ".join(c.name for c in absent) + ".",
+        )
+    report.add(
+        IssueSeverity.INFO, "model", table.name,
+        f"Loads from the data packaged in the workbook ({Path(unpacked.path).name}, {unpacked.rows:,} rows).",
+    )
+    return PBIPartition(name=f"{table.name}-partition", m_source=csv_file_source(unpacked.path, present, absent))
+
+
 def _ensure_relationship_columns(
-    tables: list[PBITable], relationships: list[PBIRelationship]
+    tables: list[PBITable], relationships: list[PBIRelationship], sources: dict[str, str] | None = None
 ) -> None:
     """Guarantee both key columns of each relationship exist, adding hidden ones if needed.
 
     Tableau exposes a join key on only one side when the other side's key is not a workbook
-    field; Power BI requires the column on both sides, so we add it (hidden) with a type
-    mirrored from the known side.
+    field (or is a hidden one); Power BI requires the column on both sides, so we add it (hidden)
+    with a type mirrored from the known side. ``sources``: Tableau column name -> its column in
+    the source. A key Tableau renamed to tell it from another table's ("Order ID (Returns)") is
+    still "Order ID" in the source, and that's the column the table must load.
     """
 
     by_name = {t.name: t for t in tables}
     for rel in relationships:
         from_table = by_name.get(rel.from_table)
         to_table = by_name.get(rel.to_table)
-        _ensure_key_column(from_table, rel.from_column, to_table, rel.to_column)
-        _ensure_key_column(to_table, rel.to_column, from_table, rel.from_column)
+        _ensure_key_column(from_table, rel.from_column, to_table, rel.to_column, sources or {})
+        _ensure_key_column(to_table, rel.to_column, from_table, rel.from_column, sources or {})
 
 
 def _ensure_key_column(
@@ -214,6 +264,7 @@ def _ensure_key_column(
     column: str,
     other_table: PBITable | None,
     other_column: str,
+    sources: dict[str, str],
 ) -> None:
     if table is None or any(c.name == column for c in table.columns):
         return
@@ -222,7 +273,7 @@ def _ensure_key_column(
         PBIColumn(
             name=column,
             data_type=data_type,
-            source_column=column,
+            source_column=sources.get(column, column),
             summarize_by=SummarizeBy.NONE,
             is_hidden=True,
         )

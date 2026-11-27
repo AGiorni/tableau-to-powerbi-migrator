@@ -64,6 +64,25 @@ def _csv(connection: TableauConnection, columns: list[PBIColumn]) -> str:
     return _finish(steps, "Headers", columns)
 
 
+def csv_file_source(path: str, columns: list[PBIColumn], absent: list[PBIColumn] | None = None) -> str:
+    """A query reading a CSV file t2pbi wrote (an unpacked extract). ``absent`` columns aren't in
+    the file: they're added empty, so the model's columns all exist when the table loads."""
+
+    connection = TableauConnection(cls="textscan", filename=path)
+    query = _csv(connection, columns)
+    if not absent:
+        return query
+    body, last = query.rsplit("\nin\n    ", 1)
+    steps = [body]
+    for column in absent:
+        steps.append(
+            f'Added{len(steps)} = Table.AddColumn({last}, "{_esc(column.source_column)}", each null, '
+            f'{_M_TYPES.get(column.data_type, "type any")})'
+        )
+        last = f"Added{len(steps) - 1}"
+    return ",\n    ".join(steps) + f"\nin\n    {last}"
+
+
 def _excel(connection: TableauConnection, relation: TableauRelation, columns: list[PBIColumn]) -> str:
     path = _file_path(connection)
     sheet = relation.name

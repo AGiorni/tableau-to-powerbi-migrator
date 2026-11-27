@@ -79,7 +79,7 @@ class Workspace:
     def _git(self, *args: str) -> str:
         proc = subprocess.run(
             ["git", "-C", str(self.root), *_IDENTITY, *args],
-            capture_output=True, text=True, timeout=120, check=False,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, check=False,
         )
         if proc.returncode != 0:
             raise WorkspaceError(f"git {args[0]} failed: {proc.stderr.strip()[:300]}")

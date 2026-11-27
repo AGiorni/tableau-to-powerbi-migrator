@@ -58,6 +58,13 @@ def main(argv: list[str] | None = None) -> int:
         help="With --refine: don't open Power BI Desktop; review changes with the checks alone.",
     )
     migrate_cmd.add_argument(
+        "--use-packaged-data",
+        action="store_true",
+        help="For a .twbx: load the data packaged in it (its Tableau extract, unpacked to CSV in "
+        "<out>/data/) instead of the workbook's own connections. A snapshot that won't refresh from "
+        "the source: for previews and testing. Needs pip install -e \".[extract]\".",
+    )
+    migrate_cmd.add_argument(
         "--quiet",
         action="store_true",
         help="Don't print the live log (each step, and the agent's model and tool calls) to stderr.",
@@ -83,6 +90,7 @@ def _run_migrate(args: argparse.Namespace) -> int:
         refine=args.refine,
         use_desktop=not args.no_desktop,
         reference_images=args.reference_images,
+        use_packaged_data=args.use_packaged_data,
         callbacks=() if args.quiet else (LiveLog(max_agent_steps=defaults.max_agent_steps),),
     )
     result = migrate(args.input, args.out, context)

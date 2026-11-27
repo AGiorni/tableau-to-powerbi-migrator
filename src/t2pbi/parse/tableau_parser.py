@@ -23,6 +23,7 @@ from t2pbi.ir.tableau_ir import (
     TableauDatasource,
     TableauDataType,
     TableauEncoding,
+    TableauExtract,
     TableauFieldRef,
     TableauJoin,
     TableauParameter,
@@ -102,6 +103,7 @@ def _parse_datasource(ds_el: etree._Element) -> TableauDatasource:
         relations=relations,
         joins=joins,
         column_origins=column_origins,
+        extract=_parse_extract(ds_el),
     )
 
 
@@ -147,27 +149,63 @@ def _parse_relations(
     joins: list[TableauJoin] = []
     for rel_el in ds_el.findall("./connection/relation"):
         _walk_relation(rel_el, relations, joins)
+    if not relations:
+        # A datasource that *is* an extract (no other source) has only '[Extract]' relations.
+        for rel_el in ds_el.findall("./connection/relation"):
+            _walk_relation(rel_el, relations, joins, keep_extract=True)
     return list(relations.values()), joins
+
+
+def _parse_extract(ds_el: etree._Element) -> TableauExtract | None:
+    """The datasource's Hyper extract: from an enabled ``<extract>`` element, or from the
+    datasource's own connection when it connects to a ``.hyper`` file directly."""
+
+    extract_el = ds_el.find("./extract")
+    if extract_el is not None and extract_el.get("enabled", "true") != "false":
+        conn = extract_el.find("./connection")
+        if conn is not None and conn.get("class") == "hyper" and conn.get("dbname"):
+            return TableauExtract(path=conn.get("dbname"), tables=_extract_tables(extract_el))
+    for named in ds_el.iter("named-connection"):
+        conn = named.find("./connection")
+        if conn is not None and conn.get("class") == "hyper" and conn.get("dbname"):
+            tables = [t for rel in ds_el.findall(".//relation") if rel.get("connection") == named.get("name")
+                      for t in [_extract_table(rel.get("table"))] if t]
+            return TableauExtract(path=conn.get("dbname"), tables=list(dict.fromkeys(tables)))
+    return None
+
+
+def _extract_tables(el: etree._Element) -> list[str]:
+    return list(dict.fromkeys(t for rel in el.iter("relation") if (t := _extract_table(rel.get("table")))))
+
+
+def _extract_table(table: str | None) -> str | None:
+    """'[Extract].[Orders_ECFC…]' -> 'Orders_ECFC…'; None for a table outside the Extract schema."""
+
+    if not table or not table.startswith("[Extract]."):
+        return None
+    return strip_brackets(table.split(".", 1)[1])
 
 
 def _walk_relation(
     rel_el: etree._Element,
     relations: dict[str, TableauRelation],
     joins: list[TableauJoin],
+    keep_extract: bool = False,
 ) -> None:
     rel_type = rel_el.get("type")
     if rel_type == "join":
         joins.extend(_parse_join_clauses(rel_el))
         for child in rel_el.findall("./relation"):
-            _walk_relation(child, relations, joins)
+            _walk_relation(child, relations, joins, keep_extract)
     elif rel_type == "collection":
         # A logical-model container that simply groups table relations.
         for child in rel_el.findall("./relation"):
-            _walk_relation(child, relations, joins)
+            _walk_relation(child, relations, joins, keep_extract)
     elif rel_el.get("name"):
         table = rel_el.get("table")
-        # Skip the shadow extract copies ('[Extract].[Orders_<guid>]') of logical tables.
-        if table and table.startswith("[Extract]"):
+        # Skip the shadow extract copies ('[Extract].[Orders_<guid>]') of logical tables, unless
+        # the extract is all the datasource has.
+        if table and table.startswith("[Extract]") and not keep_extract:
             return
         name = rel_el.get("name") or ""
         relations.setdefault(

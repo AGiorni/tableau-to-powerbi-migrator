@@ -134,12 +134,26 @@ doesn't diff every file.
   and dual-axis charts, filled maps, parameters, LOD expressions, dashboard actions), and
   screenshots for the ones the visual judge should see.
 
-- [ ] **Unpack a `.twbx` extract so the migrated report has data.** *(raised 2026-11-27)* Tableau
+- [x ] **Unpack a `.twbx` extract so the migrated report has data.** *(raised 2026-11-27)* Tableau
   Public workbooks carry their data only as a `.hyper` extract inside the package; the source
   the workbook names (an Excel or CSV file on the author's machine) isn't there. The migrated
   model points at that original path, so the report opens empty. Export each extract table to
   CSV with Tableau's Hyper API (`tableauhyperapi`, an optional extra) into the output folder and
   point the M partitions at it. Without the package installed, behave as today.
+  *(done 2026-11-27)* Opt-in (`--use-packaged-data`; a migration keeps the live source by
+  default): `unpack_extracts` exports every extract table to `<out>/data/*.csv` and the model
+  loads those files. Verified in Power BI Desktop on all five corpus workbooks: each
+  table's row count after refresh equals the extract's (773,955 rows for Australian Skills).
+  Not covered yet: an extract that stores a multi-table source flattened into one table (a
+  warning, and the workbook's own connection is kept); the CSV path is absolute, so moving the
+  project folder means repointing it.
+
+- [ ] **Workbooks whose only source is a published data source or an extract.** *(raised
+  2026-11-27)* Some client workbooks connect to a Tableau Server published data source
+  (`sqlproxy`), or only to an extract, and carry no database connection of their own. Their real
+  source has to be found on the server (the data source's own connection) to migrate to a live
+  connection; today the model gets an empty stub, or the packaged extract with
+  `--use-packaged-data`.
 
 - [ ] **Groups, sets and bins become nothing.** *(seen 2026-11-27, corpus)* Most of the corpus's
   fields "not in the model at all": Tableau groups ("Age group"), sets (`io:State Set`

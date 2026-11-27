@@ -122,6 +122,22 @@ class TableauParameter(BaseModel):
         return self.caption or strip_brackets(self.name)
 
 
+class TableauExtract(BaseModel):
+    """The data snapshot of a datasource: a Hyper database (``.hyper``) Tableau keeps for it.
+
+    In a packaged workbook (``.twbx``) the file is inside the package, at ``path``; that's all the
+    data a workbook downloaded from Tableau Public carries, since the source it was built from
+    stays on its author's machine. A plain ``.twb`` names a file elsewhere (often a temp file).
+    """
+
+    path: str = Field(description="The .hyper file: a path inside the package, e.g. 'Data/Extracts/x.hyper'.")
+    tables: list[str] = Field(
+        default_factory=list,
+        description="Its tables in schema 'Extract': 'Extract' for a one-table source, or one per "
+        "logical table named '<table>_<32 hex>'.",
+    )
+
+
 class TableauDatasource(BaseModel):
     """A Tableau datasource: connections plus the fields it exposes."""
 
@@ -136,6 +152,7 @@ class TableauDatasource(BaseModel):
         default_factory=dict,
         description="Raw logical column name (e.g. '[Sales]') -> physical origin.",
     )
+    extract: TableauExtract | None = None
 
     @property
     def display_name(self) -> str:

@@ -82,7 +82,9 @@ def build_file_map(model: PBIModel, pages: list[PBIReportPage] | None = None) ->
     files: dict[str, str] = {}
 
     files[f"{name}.pbip"] = _json(_pbip_pointer(name))
-    files[".gitignore"] = "**/.pbi/localSettings.json\n**/.pbi/cache.abf\n"
+    # data/: the CSV files unpacked from a packaged workbook's extracts. It's the workbook's data
+    # (a client's, for a client workbook), so it isn't committed unless someone decides to.
+    files[".gitignore"] = "**/.pbi/localSettings.json\n**/.pbi/cache.abf\n/data/\n"
 
     # Semantic model.
     files[f"{name}.SemanticModel/.platform"] = _json(_platform(name, "SemanticModel"))

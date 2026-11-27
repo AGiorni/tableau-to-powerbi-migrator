@@ -37,3 +37,6 @@ tools/**/obj/
 
 # Third-party workbooks (Tableau Public): kept local, never pushed to the public repo
 /samples/local/
+
+# Tableau Hyper's process log: lists local file paths
+hyperd*.log

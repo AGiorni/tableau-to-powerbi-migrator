@@ -9,6 +9,83 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-27 — A packaged workbook's data: extracts unpacked to CSV, opt-in
+
+**Decision (the user's): opt-in, off by default.** In client work the input is a workbook
+whose connection names the client's live source (SQL Server, Snowflake, a file share), and the
+migrated report must keep refreshing from it. A CSV snapshot of an extract never refreshes;
+swapping it in by default would make the output worse. So the graph routes
+`ingest → [packaged_data] unpack_extracts → map_model` only when
+`MigrationContext.use_packaged_data` is set (`--use-packaged-data`), and otherwise
+`[source_connections] → map_model` keeps the workbook's own connections, as before. It stays a
+graph node rather than a separate script: the graph is the only runner, and a script rewriting the
+output afterwards would be a second, untested path. When a package carries an extract and the
+option is off, `ingest` says so in an INFO line. On for development (`scripts/fidelity.py`: the
+corpus's sources are unreachable, so its extracts are all the data there is) and for a preview
+when a client's source can't be reached.
+
+**The problem (reported by the user).** The migrated Australian Skills report refreshed with
+"Could not find a part of the path 'C:\Users\eugye\Desktop\skills-demand-tracker\output\'".
+A `.twbx` from Tableau Public carries its data only as a Hyper extract (`Data/…/*.hyper`); its
+connection still names the Excel or CSV file on its author's machine, and t2pbi copied that path
+into the model. The loader read the `.twb` out of the package and ignored the rest. Every corpus
+score so far was structural, which is why nothing had caught it.
+
+**What was built.**
+- *Parser:* `TableauDatasource.extract` records the extract (the `.hyper` path inside the
+  package and its tables in schema `Extract`), from an enabled `<extract>` element or from a
+  datasource that connects to the `.hyper` file directly (a published extract). For the latter,
+  the `[Extract].[Extract]` relation is now kept: it used to be skipped as a "shadow copy",
+  which left Medical Device Sales with no relation and an empty-table stub.
+- *A graph node, `unpack_extracts`* (ingest → unpack_extracts → map_model): for a `.twbx`
+  whose package holds the extract, Hyper's own `COPY … TO … WITH (FORMAT csv, HEADER)` writes
+  each table to `<out>/data/<datasource>__<table>.csv` (Australian Skills: 773,955 rows, 98 MB, in
+  about a second; ISO dates). Uses Tableau's Hyper API (`tableauhyperapi`, Apache-2.0, the new
+  `extract` extra) with `Telemetry.DO_NOT_SEND_USAGE_DATA_TO_TABLEAU`. Without the package: a
+  WARNING saying why and how to install it, and the workbook's own connections stay. A `.twb` is
+  never touched (Book1's extract names a temp file; its Excel source is what counts).
+- *`map_model`* loads a table from its CSV: the extract table named after its logical table
+  (`Orders_<32 hex>` for `Orders`), or the only one for a one-table source. Columns match the
+  header by source name, then display name. A column the file lacks stays in the model, empty
+  (`Table.AddColumn … each null`), with a warning, so its visuals don't break.
+- *The project's `.gitignore` excludes `/data/`:* it's the workbook's data, a client's for a
+  client workbook, so committing it is a decision, not a default. The refinement workspace
+  tracks project files only, so it never commits it either.
+
+**Found on the way.**
+- *Re-added relationship keys loaded the wrong column.* Tableau renames a column shared by two
+  logical tables ("Order ID (Returns)"); when that key is hidden, `_ensure_key_column` added it
+  back with the Tableau name as its source column. It's "Order ID" in the source, so it loaded
+  blank and Desktop refused the refresh: "contains blank values … not allowed for columns on the
+  one side of a many-to-one relationship". The parser already knew the source name
+  (`column_origins`); it's now used. The same bug applied to a workbook's own Excel source.
+- *External tools' output was decoded with the Windows code page (cp1252).* The Desktop Bridge
+  crashed on Superstore Analysis, whose author worked in Chinese. The same latent bug was in the
+  PBIR validator wrapper, where an undecodable output reads as "tool not installed", so
+  validation would have been skipped silently; and in the TMDL validator and git wrappers. All
+  four now decode UTF-8 with replacement.
+
+**Verified in Power BI Desktop** (open, refresh through the Authoring MCP, `COUNTROWS` per
+table): every table of all five corpus workbooks has exactly the extract's row count.
+
+| Workbook | Tables | Rows after refresh = rows in the extract |
+|---|---|---|
+| Australian Skills | 1 | 773,955 |
+| Superstore Business | 3, with relationships | 10,194 / 4 / 296 |
+| Medical Device Sales | 1 (an empty stub before) | 71,246 |
+| HR Attrition | 2 | 1,470 / 4 |
+| Superstore Analysis | 1 | 9,994 |
+
+227 tests pass (new: unpacking a package built in the test with the Hyper API; no Hyper API;
+a `.twb` untouched; an extract-only datasource; re-added key columns). On the committed samples
+the only output change is the `.gitignore` line.
+
+**Not yet:** an extract that stores a multi-table source flattened into one table (a warning;
+the workbook's own connection is kept), and the CSV path is absolute, so moving the project
+folder means repointing it.
+
+---
+
 ## 2026-11-27 — A local corpus of real workbooks, and the general bugs it found
 
 **Why.** Every rule so far was checked on Book1 alone. The user downloaded five Tableau Public

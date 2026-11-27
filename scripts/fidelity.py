@@ -103,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
                 run_output_validation=args.refine,  # refinement runs after validation
                 refine=args.refine,
                 reference_images=str(references) if references.is_dir() else None,
+                use_packaged_data=True,  # an evaluator renders with the data the workbook carries
                 callbacks=live,
             ),
         )
@@ -186,7 +187,9 @@ def _score_corpus(root: Path, out_root: Path, chat, live) -> int:
         if book is None:
             continue
         project_dir = out_root / "local" / folder.name
-        result = migrate(book, project_dir, MigrationContext(chat_model=chat, callbacks=live))
+        # Corpus workbooks come from Tableau Public: their sources are unreachable, the packaged
+        # extract is all the data there is.
+        result = migrate(book, project_dir, MigrationContext(chat_model=chat, callbacks=live, use_packaged_data=True))
         workbook = parse_workbook(load_workbook(book))
         results = score_structural(derive_expectations(workbook, book.name), read_project(project_dir))
         ok = sum(r.passed for r in results)

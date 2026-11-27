@@ -176,7 +176,7 @@ html { scroll-behavior: smooth; }
   </div>
   <figure>
     <div class="frame">
-      <svg class="d" viewBox="0 0 880 1800" role="img" aria-label="The CLI builds a MigrationContext and invokes the graph. ingest, then map_model. A router after map_model picks translate, no_llm or nothing_to_translate. translate_expressions calls Azure OpenAI, then validate_expressions either loops back on the repair route or continues on done to map_visuals. flag_untranslated and the nothing_to_translate route also lead to map_visuals, which may call the LLM for unmatched sheets and checks roles against the visual catalog. Then validate_model, assemble, and a router that either runs validate_tmdl and validate_pbir through Microsoft's checkers or skips to the end. With --refine and an LLM, a router after validate_pbir runs the refinement: prepare_workspace makes the project a git repository; open_desktop opens it in Power BI Desktop with data loaded, unless the run uses checks only; assess builds the work list from derived checks, the report and the visual judge; then a loop of pick_item, fix_item (the agent, calling Azure OpenAI, edits the report's PBIR JSON with every save validated) and review_item (commit if the gates pass, else revert and retry once) runs while work and budget remain; finalize_refine closes Desktop and reports.">
+      <svg class="d" viewBox="0 0 880 1800" role="img" aria-label="The CLI builds a MigrationContext and invokes the graph. ingest, then map_model; with --use-packaged-data, unpack_extracts (a .twbx's data to CSV) runs between them. A router after map_model picks translate, no_llm or nothing_to_translate. translate_expressions calls Azure OpenAI, then validate_expressions either loops back on the repair route or continues on done to map_visuals. flag_untranslated and the nothing_to_translate route also lead to map_visuals, which may call the LLM for unmatched sheets and checks roles against the visual catalog. Then validate_model, assemble, and a router that either runs validate_tmdl and validate_pbir through Microsoft's checkers or skips to the end. With --refine and an LLM, a router after validate_pbir runs the refinement: prepare_workspace makes the project a git repository; open_desktop opens it in Power BI Desktop with data loaded, unless the run uses checks only; assess builds the work list from derived checks, the report and the visual judge; then a loop of pick_item, fix_item (the agent, calling Azure OpenAI, edits the report's PBIR JSON with every save validated) and review_item (commit if the gates pass, else revert and retry once) runs while work and budget remain; finalize_refine closes Desktop and reports.">
         <defs>
           <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-fg"/></marker>
           <marker id="ahm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-muted"/></marker>
@@ -202,8 +202,17 @@ html { scroll-behavior: smooth; }
         <rect class="box" x="236" y="112" width="288" height="56" rx="6"/>
         <text class="t-name" x="252" y="134">ingest</text>
         <text class="t-desc" x="252" y="154">unzip .twbx → lxml → parse_workbook()</text>
-        <line class="ln" x1="380" y1="168" x2="380" y2="206" marker-end="url(#ah)"/>
-        <text class="t-lab" x="390" y="191">workbook</text>
+        <!-- unpack_extracts -->
+        <line class="ln-route" x1="524" y1="140" x2="578" y2="140" marker-end="url(#aha)"/>
+        <text class="t-route" x="551" y="133" text-anchor="middle">packaged_data</text>
+        <line class="ln-route" x1="380" y1="168" x2="380" y2="206" marker-end="url(#aha)"/>
+        <text class="t-route" x="390" y="191">source_connections</text>
+        <rect class="box" x="580" y="112" width="284" height="56" rx="6"/>
+        <text class="t-name" x="596" y="134">unpack_extracts</text>
+        <text class="t-desc" x="596" y="154">.twbx extract → data/*.csv (Hyper API)</text>
+        <path class="ln" d="M722 168 V236 H526" marker-end="url(#ah)"/>
+        <text class="t-desc" x="732" y="222">(opt-in)</text>
+        <text class="t-lab" x="732" y="204">CSV files</text>
 
         <!-- map_model -->
         <rect class="box" x="236" y="208" width="288" height="56" rx="6"/>
@@ -629,7 +638,8 @@ html { scroll-behavior: smooth; }
         <tr><td>graph/pipeline.py</td><td><code>build_graph()</code>: the topology, the only runner. <code>migrate()</code> invokes it. Start here.</td></tr>
         <tr><td>graph/nodes.py</td><td>The nine nodes (thin, return partial updates) and the three routers.</td></tr>
         <tr><td>graph/state.py</td><td><code>MigrationState</code> (data, serializable) and <code>MigrationContext</code> (chat model, flags, budgets).</td></tr>
-        <tr><td>ingest/loader.py</td><td>Reads <code>.twb</code>, or the shallowest <code>.twb</code> inside a <code>.twbx</code> zip. Extracts are ignored.</td></tr>
+        <tr><td>ingest/loader.py</td><td>Reads <code>.twb</code>, or the shallowest <code>.twb</code> inside a <code>.twbx</code> zip.</td></tr>
+        <tr><td>ingest/extracts.py</td><td>A <code>.twbx</code>'s data: its Hyper extracts, exported table by table to <code>&lt;out&gt;/data/*.csv</code> with Tableau's Hyper API (the <code>extract</code> extra; telemetry off). Opt-in (<code>--use-packaged-data</code>): by default the model keeps the workbook's own connections, the live source a migrated report must refresh from; the snapshot is for previews and testing. A <code>.twb</code> is never touched.</td></tr>
         <tr><td>parse/tableau_parser.py</td><td>XML → Tableau IR: datasources, columns, calcs (LOD flagged), joins, parameters, worksheet shelves (column instances incl. table-calc prefixes and instance numbers), hidden sheets, dashboard zones.</td></tr>
         <tr><td>ir/tableau_ir.py</td><td>Pydantic models for what was read from Tableau.</td></tr>
         <tr><td>ir/powerbi_ir.py</td><td>Pydantic models for what will be written: tables, measures, relationships, pages, visuals.</td></tr>
@@ -710,7 +720,7 @@ python scripts\snapshot_outputs.py compare a.json b.json</pre>
 </section>
 
 <footer>
-  Checked against <span class="mono">main</span> after the local-corpus fixes (display names, cards, scatter, pie, treemap, annotations), 27 Nov 2026. If the code has moved since, trust the code, and update this map.
+  Checked against <span class="mono">main</span> after step 4: a packaged workbook's extracts unpacked to CSV, opt-in (unpack_extracts), 27 Nov 2026. If the code has moved since, trust the code, and update this map.
 </footer>
 
 </div>

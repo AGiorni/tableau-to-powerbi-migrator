@@ -29,6 +29,10 @@ dev = [
     "pytest>=8.2",
     "ruff>=0.5",
 ]
+# Unpack the data a packaged workbook (.twbx) carries: Tableau's Hyper API reads its extracts.
+extract = [
+    "tableauhyperapi>=0.0.26963",
+]
 # Traces in a local Arize Phoenix (T2PBI_PHOENIX=true; scripts/phoenix_server.py).
 trace = [
     "arize-phoenix>=22",

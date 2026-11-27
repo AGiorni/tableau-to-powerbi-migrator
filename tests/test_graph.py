@@ -49,6 +49,7 @@ def test_graph_shape():
     assert set(graph.nodes) == {
         "__start__",
         "ingest",
+        "unpack_extracts",
         "map_model",
         "translate_expressions",
         "validate_expressions",
@@ -68,6 +69,9 @@ def test_graph_shape():
         "__end__",
     }
     edges = {(e.source, e.target, e.data, e.conditional) for e in graph.edges}
+    assert ("ingest", "unpack_extracts", "packaged_data", True) in edges
+    assert ("ingest", "map_model", "source_connections", True) in edges
+    assert ("unpack_extracts", "map_model", None, False) in edges
     # Decisions are conditional edges with named routes, not branches hidden inside nodes.
     assert ("map_model", "translate_expressions", "translate", True) in edges
     assert ("map_model", "flag_untranslated", "no_llm", True) in edges
@@ -219,6 +223,14 @@ def test_refine_builds_a_workspace_and_a_work_list(book1_twb, tmp_path, monkeypa
     # Untranslated calcs are problems on the pages that show them.
     assert any(p.check == "report:measure[profit ratio]" for p in pages["Tooltip: Profit Ratio by City"].problems)
     assert any(i.stage == "refine" and i.message.startswith("To refine") for i in state.issues)
+
+
+def test_packaged_data_is_opt_in():
+    state = MigrationState(input_path="x.twbx", out_dir="y")
+    default = SimpleNamespace(context=MigrationContext())
+    assert nodes.route_packaged_data(state, default) == "source_connections"
+    opted = SimpleNamespace(context=MigrationContext(use_packaged_data=True))
+    assert nodes.route_packaged_data(state, opted) == "packaged_data"
 
 
 def test_route_desktop_and_route_work():

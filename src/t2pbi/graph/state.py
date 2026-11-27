@@ -19,6 +19,7 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, Field
 
+from t2pbi.ingest.extracts import ExportedTable
 from t2pbi.ir.powerbi_ir import PBIModel, PBIReportPage
 from t2pbi.ir.tableau_ir import TableauCalculatedField, TableauWorkbook
 from t2pbi.mapping.report import MigrationIssue
@@ -51,6 +52,11 @@ class MigrationState(BaseModel):
 
     # map_visuals
     pages: list[PBIReportPage] = Field(default_factory=list)
+
+    # unpack_extracts (opt-in, MigrationContext.use_packaged_data): the data a .twbx carries,
+    # written as CSV (datasource name -> extract table name -> file, header, rows). map_model reads
+    # these instead of the workbook's own connections.
+    extracts: dict[str, dict[str, ExportedTable]] = Field(default_factory=dict)
 
     # assemble
     pbip_path: str | None = None
@@ -105,6 +111,11 @@ class MigrationContext:
     # images (t2pbi.fidelity.references). Only pages with some are compared with a picture;
     # without any, Desktop isn't opened.
     reference_images: str | None = None
+    # Load a packaged workbook's (.twbx) data from its extract, unpacked to CSV in the output
+    # folder, instead of the workbook's own connections. Off by default: a migration keeps the
+    # live source, so the report refreshes from the client's database. On for development (the
+    # local corpus has no reachable sources) and for a preview when the source can't be reached.
+    use_packaged_data: bool = False
     # LangChain callback handlers that watch the run (t2pbi.observe.LiveLog for the live log);
     # migrate() passes them to the graph, which hands them every node's events.
     callbacks: tuple[Any, ...] = ()
