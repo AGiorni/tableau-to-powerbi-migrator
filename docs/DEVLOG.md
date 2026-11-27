@@ -9,6 +9,65 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-27 — The agent's proven fixes become first-pass rules
+
+**Why.** CLAUDE.md: deterministic code wherever the input answers the question. In the 4.4b run
+the agent fixed, at 10 to 32 tool calls a page, things the workbook states outright. Each is now a
+mapper rule, stated in Tableau's terms (mark type, shelf, the sheet's own settings), never in
+Book1's names. The user asked that they stay general: t2pbi migrates any workbook. The agent
+keeps only what the input can't answer.
+
+**The rules** (`mapping/visual_mapper.py`, `mapping/model_mapper.py`):
+- *Stacking, Tableau's default.* Area marks become `stackedAreaChart`; bars split by a colour
+  dimension become stacked `columnChart` / `barChart` (plain bars stay clustered, which looks the
+  same). Lines never stack. An explicit "Stack Marks: Off" isn't read yet, because its XML form
+  isn't documented (BACKLOG).
+- *Title:* the static part of the sheet's custom title (the parser already read it in 4.1);
+  dynamic field inserts are left out.
+- *Tooltip shelf:* its measures go in `Tooltips`. Power BI tooltips take measures, so dimensions
+  there are left out.
+- *Sort:* the sheet's own sort when it names a field the visual shows. Otherwise Tableau's
+  default, the axis dimension in its own order (alphabetical, or by date), where the old code
+  always sorted by the first measure, descending. Maps get no default.
+- *Row counts:* Tableau's built-in "<table> (Count)" field (a `datatype='table'` column named
+  `<table>_<32 hex>`) became a `COUNTROWS('<table>')` measure, named as Tableau shows it, on the
+  table named after the logical table, or the model's only table for a single-table source. The
+  agent had used a Count of one column, which misses that column's blank rows. Recognising the
+  field moved to `tableau_ir.counted_table`, shared with the derived checks: it says what the
+  Tableau field *is*, not how the mapper renders it.
+- *Viz in tooltip:* the embedded sheet's page is a hidden 320×240 report-page tooltip
+  (`type: Tooltip`, `HiddenInViewMode`, `ActualSize`, `pageBinding`). The host's visual gets
+  `visualTooltip` → that page; because the dashboard copies the host visual, every copy hovers.
+  A host with several tooltip sheets links the first and warns (Power BI shows one per visual).
+
+**Not promoted: the map.** The agent switched on the Azure Maps filled-map layer but left the
+measure in `Size`, and the judge moved only 2 → 3. Colouring regions by a measure needs
+conditional formatting JSON not yet verified in Desktop, and when a Tableau map is filled rather
+than symbols isn't settled for `Automatic` marks (BACKLOG).
+
+**Found on the way.**
+- *The agent had silently broken a link.* Its last change on the map rewrote
+  `visualContainerObjects` without the tooltip link it had set in an earlier commit, and the
+  review kept it, because no check verified the link. New derived check `tooltip-link[<host>]`:
+  the host's visual, found where Tableau viewers see it, must name the tooltip page
+  (`fidelity.project.Visual.tooltip_page`, `SheetExpectation.tooltip_hosts`, also settable in an
+  oracle).
+- *Problems name sheets, visuals show titles.* With custom titles, "visual 'Key Performance
+  Indicators'" no longer matched the visual titled "Executive Overview - Profitability".
+  `ReportFiles` now takes each sheet's expected title, so the agent's tools find a visual by its
+  sheet too, and the page overview labels each visual with its sheet.
+
+**Verified.** Book1's first pass, no model calls: oracle 45/63 → 57/64 (89%; 4.4b's agent run
+reached 56/63), derived 34/49 → 44/50. Every remaining failure is model-side (month date level,
+the colour split: 4.5). Eleven known gaps were removed from `samples/Book1/expected.toml`, the
+ratchet working. Snapshot: only Book1 and Book1_hidden output changed (superstore and sales_sql
+have no charts, so they don't exercise these rules; synthetic sheets in `tests/test_visuals.py`
+cover each rule apart from Book1). Both Microsoft validators pass on every sample. The scripted
+loop tests now undo some first-pass fixes (`first_pass_without`) to keep work for the agent.
+207 tests pass.
+
+---
+
 ## 2026-11-27 — Validator errors are work for the agent; the gate compares before and after
 
 **The gap (the user's question).** The agent's work list was built from derived checks, page

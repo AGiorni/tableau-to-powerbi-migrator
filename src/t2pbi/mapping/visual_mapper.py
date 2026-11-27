@@ -6,7 +6,13 @@ appropriate field wells for the chosen visual type.
 
 Pages follow what a Tableau viewer can open as a tab (:func:`_gets_own_page`): every dashboard is
 a page holding its worksheets' visuals, and a worksheet gets a page of its own unless it's hidden
-in Tableau and shown on a dashboard.
+in Tableau and shown on a dashboard. A worksheet shown in another sheet's tooltip ("viz in
+tooltip") becomes a hidden report-page tooltip, linked from every copy of its host's visual.
+
+What each visual shows is read from the worksheet, never assumed: its custom title (the static
+part), the fields on its Tooltip shelf, its sort (else the dimension's own order, Tableau's
+default), Tableau's default stacking (areas, and bars split by a colour dimension), and row
+counts of a logical table, bound to the ``COUNTROWS`` measure the model mapper adds.
 """
 
 from __future__ import annotations
@@ -24,8 +30,10 @@ from t2pbi.ir.tableau_ir import (
     TableauFieldRef,
     TableauWorkbook,
     TableauWorksheet,
+    counted_table,
     strip_brackets,
 )
+from t2pbi.mapping.model_mapper import row_count_measure_name
 from t2pbi.mapping.report import IssueSeverity, MigrationReport
 from t2pbi.mapping.visual_catalog import enforce_wells
 from t2pbi.mapping.visual_decision import (
@@ -39,9 +47,19 @@ from t2pbi.mapping.visual_decision import (
 # 0=Sum,1=Average,2=DistinctCount,3=Min,4=Max,5=Count,6=Median (per official PBIR docs).
 _AGG_FUNCTION = {"sum": 0, "avg": 1, "cntd": 2, "min": 3, "max": 4, "cnt": 5, "count": 5, "median": 6}
 
-# Tableau mark class -> Power BI visual type, by chart orientation.
-_VERTICAL_TYPE = {"Bar": "clusteredColumnChart", "Line": "lineChart", "Area": "areaChart"}
-_HORIZONTAL_TYPE = {"Bar": "clusteredBarChart", "Line": "lineChart", "Area": "areaChart"}
+# Tableau mark class -> Power BI visual type, by chart orientation. Tableau stacks area marks by
+# default ("Stack Marks: Automatic"), so an area chart is a stacked one; bars stack too when a
+# colour dimension splits them (_STACKED_TYPE). Line marks never stack.
+# Not read yet: an explicit "Stack Marks: Off" (BACKLOG; its XML form isn't confirmed).
+_VERTICAL_TYPE = {"Bar": "clusteredColumnChart", "Line": "lineChart", "Area": "stackedAreaChart"}
+_HORIZONTAL_TYPE = {"Bar": "clusteredBarChart", "Line": "lineChart", "Area": "stackedAreaChart"}
+_STACKED_TYPE = {"clusteredColumnChart": "columnChart", "clusteredBarChart": "barChart"}
+
+# Visual types whose "Category" is a location, not an ordered axis: no default sort.
+_UNORDERED_TYPES = {"azureMap", "map", "filledMap"}
+
+# Power BI Desktop's default size for a report-page tooltip.
+_TOOLTIP_PAGE_SIZE = (320, 240)
 _TABLE_MARKS = {"Text", "Square"}
 
 # Marks with a deterministic chart rule; other marks are routed to the router as unmatched.
@@ -127,11 +145,16 @@ def map_visuals(
             )
             continue
 
-        visual = _to_visual(decision, wells, ws.name)
+        sort_field, descending = _sort_of(ws, wells, decision, column_table, measure_table, calc_display)
+        visual = _to_visual(decision, wells, ws.title or ws.name, sort_field, descending)
         by_worksheet[ws.name] = visual
         if _gets_own_page(ws, ws.name in tooltip_sheets, dashboards_of.get(ws.name, []), report):
-            pages.append(PBIReportPage(name=new_object_name(), display_name=ws.name, visuals=[visual]))
+            if ws.name in tooltip_sheets:
+                pages.append(_tooltip_page(ws.name, visual))
+            else:
+                pages.append(PBIReportPage(name=new_object_name(), display_name=ws.name, visuals=[visual]))
 
+    _link_tooltip_pages(workbook, by_worksheet, pages, report)  # before dashboards copy the hosts
     pages.extend(
         _map_dashboards(workbook, by_worksheet, column_table, measure_table, calc_display, report)
     )
@@ -167,17 +190,81 @@ def _gets_own_page(ws: TableauWorksheet, in_a_tooltip: bool, shown_on: list[str]
 
 
 def _to_visual(
-    decision: MappingDecision, wells: dict[str, list[PBIFieldRef]], title: str
+    decision: MappingDecision,
+    wells: dict[str, list[PBIFieldRef]],
+    title: str,
+    sort_field: PBIFieldRef | None,
+    sort_descending: bool,
 ) -> PBIVisual:
     return PBIVisual(
         name=new_object_name(),
         visual_type=decision.visual_type,
         title=title,
         wells=wells,
-        sort_field=decision.sort_field,
-        sort_descending=decision.sort_descending,
+        sort_field=sort_field,
+        sort_descending=sort_descending,
         **_VISUAL_BOX,
     )
+
+
+def _sort_of(
+    ws: TableauWorksheet,
+    wells: dict[str, list[PBIFieldRef]],
+    decision: MappingDecision,
+    column_table: dict[str, str],
+    measure_table: dict[str, str],
+    calc_display: dict[str, str],
+) -> tuple[PBIFieldRef | None, bool]:
+    """The visual's sort: the worksheet's own sort when it names a field the visual shows; else
+    Tableau's default, the axis dimension in its own order (alphabetical, or by date); else
+    whatever the router decided."""
+
+    shown = [f for fields in wells.values() for f in fields]
+    for sort in ws.sorts:
+        ref = sort.by if sort.by is not None else sort.dimension
+        target = _resolve_field(ref, column_table, measure_table, calc_display)
+        if target is not None and target in shown:
+            return target, sort.direction == "desc"
+    axis = wells.get("Category")
+    if axis and decision.visual_type not in _UNORDERED_TYPES:
+        return axis[0], False
+    return decision.sort_field, decision.sort_descending
+
+
+def _tooltip_page(sheet: str, visual: PBIVisual) -> PBIReportPage:
+    """A viz-in-tooltip sheet as a hidden report-page tooltip, its visual filling the page."""
+
+    width, height = _TOOLTIP_PAGE_SIZE
+    fitted = visual.model_copy(update={
+        "name": new_object_name(), "x": 0.0, "y": 0.0, "width": float(width), "height": float(height),
+    })
+    return PBIReportPage(
+        name=new_object_name(), display_name=sheet, visuals=[fitted], tooltip=True, width=width, height=height,
+    )
+
+
+def _link_tooltip_pages(
+    workbook: TableauWorkbook,
+    by_worksheet: dict[str, PBIVisual],
+    pages: list[PBIReportPage],
+    report: MigrationReport,
+) -> None:
+    """Point each host visual at the tooltip page of the sheet in its tooltip. Its page shows the
+    same visual object and dashboards copy it, so every copy of the host gets the hover."""
+
+    tooltip_pages = {p.display_name: p.name for p in pages if p.tooltip}
+    for ws in workbook.worksheets:
+        host = by_worksheet.get(ws.name)
+        tips = [t for t in ws.tooltip_sheets if t in tooltip_pages]
+        if host is None or not tips:
+            continue
+        host.tooltip_page = tooltip_pages[tips[0]]
+        if len(tips) > 1:
+            report.add(
+                IssueSeverity.WARNING, "visual", ws.name,
+                f"Its tooltip shows several sheets ({', '.join(tips)}); Power BI shows one report-page "
+                f"tooltip per visual, so only '{tips[0]}' is linked.",
+            )
 
 
 # Tableau lays dashboards out on a 100000 x 100000 grid; map it onto the report canvas.
@@ -265,13 +352,15 @@ def _map_worksheet(
     )
     measure_values = resolve_all(ws.measure_names)
     encoding_fields = [f for e in ws.encodings for f in resolve_all([e.field])]
+    # Tableau's Tooltip shelf -> the Tooltips role, which takes measures (and aggregations).
+    _, tooltip_measures = _split([f for e in ws.encodings if e.kind == "tooltip" for f in resolve_all([e.field])])
     shelf_measures = row_measures + col_measures
     all_fields = _dedup([*row_dims, *col_dims, *shelf_measures, *encoding_fields, *measure_values])
     features = _worksheet_features(ws, row_dims, col_dims, row_measures, col_measures, color_dims)
 
     # A geographic worksheet -> map (location = dimensions, measure = size).
     if ws.is_map:
-        return _map_geographic(all_fields) or _fallback(all_fields, features)
+        return _map_geographic(all_fields, tooltip_measures) or _fallback(all_fields, features)
 
     # A Measure Names/Measure Values sheet, a text/square mark, or a sheet with no measures -> table.
     if ws.measure_names or ws.mark_class in _TABLE_MARKS or not shelf_measures:
@@ -296,6 +385,8 @@ def _map_worksheet(
     else:
         axis, values, trellis = col_dims, (row_measures or col_measures), row_dims
         visual_type = _VERTICAL_TYPE.get(ws.mark_class, "clusteredColumnChart")
+    if color_dims:
+        visual_type = _STACKED_TYPE.get(visual_type, visual_type)  # Tableau stacks split bars
 
     # Trellis dims (a dimension sharing the measure's shelf) default to small multiples ("Rows");
     # a colour-encoding dimension becomes an overlaid legend series ("Series").
@@ -304,6 +395,7 @@ def _map_worksheet(
         "Y": values,
         "Rows": trellis,
         "Series": color_dims,
+        "Tooltips": [f for f in tooltip_measures if f not in values],
     }
     wells = {name: fields for name, fields in wells.items() if fields}
     if not wells:
@@ -364,8 +456,11 @@ def _dedup(fields: list[PBIFieldRef]) -> list[PBIFieldRef]:
     return out
 
 
-def _map_geographic(all_fields: list[PBIFieldRef]) -> MappingDecision | None:
-    """Build an azureMap: dimensions become the location, the first measure sizes the points."""
+def _map_geographic(
+    all_fields: list[PBIFieldRef], tooltip_measures: list[PBIFieldRef]
+) -> MappingDecision | None:
+    """Build an azureMap: dimensions become the location, the first measure sizes the points,
+    the Tooltip shelf's measures go in Tooltips."""
 
     dims, measures = _split(all_fields)
     if not dims:
@@ -373,6 +468,9 @@ def _map_geographic(all_fields: list[PBIFieldRef]) -> MappingDecision | None:
     wells: dict[str, list[PBIFieldRef]] = {"Category": dims}
     if measures:
         wells["Size"] = [measures[0]]
+    tips = [f for f in tooltip_measures if f not in wells.get("Size", [])]
+    if tips:
+        wells["Tooltips"] = tips
     return MappingDecision(
         visual_type="azureMap",
         wells=wells,
@@ -404,6 +502,13 @@ def _resolve_field(
 ) -> PBIFieldRef | None:
     name = ref.field
     display = calc_display.get(name, name)
+
+    counted = counted_table(ref)
+    if counted is not None:  # Tableau's "<table> (Count)": the COUNTROWS measure the model mapper adds
+        measure = row_count_measure_name(counted)
+        if measure not in measure_table:
+            return None
+        return PBIFieldRef(entity=measure_table[measure], property=measure, kind=FieldKind.MEASURE)
 
     if display in measure_table:
         return PBIFieldRef(entity=measure_table[display], property=display, kind=FieldKind.MEASURE)

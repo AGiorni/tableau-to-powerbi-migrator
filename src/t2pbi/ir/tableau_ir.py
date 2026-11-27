@@ -7,6 +7,7 @@ map (or want to report on) are retained.
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 from typing import Literal
 
@@ -228,6 +229,19 @@ class TableauWorkbook(BaseModel):
     parameters: list[TableauParameter] = Field(default_factory=list)
     worksheets: list[TableauWorksheet] = Field(default_factory=list)
     dashboards: list[TableauDashboard] = Field(default_factory=list)
+
+
+# Tableau's per-table row count ("Orders (Count)" in the data pane) is a column of datatype 'table'
+# named "<logical table>_<32 hex digits>", placed on a shelf with a count aggregation.
+_TABLE_COUNT = re.compile(r"^(.*)_[0-9A-Fa-f]{32}$")
+_COUNT_AGGREGATIONS = {"cnt", "cntd"}
+
+
+def counted_table(ref: TableauFieldRef) -> str | None:
+    """The logical table whose rows ``ref`` counts, or None when it isn't a row count."""
+
+    match = _TABLE_COUNT.match(ref.field)
+    return match.group(1) if match and ref.aggregation in _COUNT_AGGREGATIONS else None
 
 
 def strip_brackets(name: str) -> str:

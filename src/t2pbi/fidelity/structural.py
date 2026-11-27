@@ -61,9 +61,10 @@ def score_structural(expected: WorkbookExpectations, project: Project) -> list[C
 
     results: list[CheckResult] = []
     titles = {s.name: s.title for s in expected.sheets if s.title}
+    sheets = {s.name: s for s in expected.sheets}
     for sheet in expected.sheets:
         page = sheet.page if sheet.page_name != sheet.name else None
-        for check, passed, detail in _sheet_checks(sheet, project, titles):
+        for check, passed, detail in _sheet_checks(sheet, project, titles, sheets):
             results.append(
                 CheckResult(sheet.name, check, passed, detail, sheet.known_gaps.get(check), page)
             )
@@ -75,7 +76,9 @@ def score_structural(expected: WorkbookExpectations, project: Project) -> list[C
     return results
 
 
-def _sheet_checks(sheet: SheetExpectation, project: Project, titles: dict[str, str]):
+def _sheet_checks(
+    sheet: SheetExpectation, project: Project, titles: dict[str, str], sheets: dict[str, SheetExpectation]
+):
     page = project.page(sheet.page_name)
     yield "page", page is not None, "" if page else f"no page named {sheet.page_name!r}"
     on_another_page = sheet.page_name != sheet.name
@@ -91,6 +94,8 @@ def _sheet_checks(sheet: SheetExpectation, project: Project, titles: dict[str, s
             bool(page and page.visibility == "HiddenInViewMode"),
             f"visibility={page and page.visibility}",
         )
+        for host in sheet.tooltip_hosts:
+            yield _tooltip_link(host, page, project, sheets)
 
     if sheet.kind == "dashboard":
         yield from _dashboard_checks(sheet, page, titles)
@@ -118,6 +123,18 @@ def _sheet_checks(sheet: SheetExpectation, project: Project, titles: dict[str, s
         ok = actual is not None and matches(spec, actual[0], project) and actual[1].lower() == direction
         got = f"{describe(actual[0])} {actual[1].lower()}" if actual else "no sort"
         yield "sort", ok, f"got {got}, want {spec} {direction}"
+
+
+def _tooltip_link(host: str, tooltip: Page | None, project: Project, sheets: dict[str, SheetExpectation]):
+    """Hovering the host sheet's visual shows this tooltip page: the visual's visualTooltip names
+    it. The host is found where Tableau viewers see it (its own page, or its dashboard's)."""
+
+    expected = sheets.get(host) or SheetExpectation(name=host)
+    host_page = project.page(expected.page_name)
+    visual = _sheet_visual(expected, host_page) if expected.page_name != host else _main_visual(host_page)
+    linked = visual.tooltip_page if visual else None
+    ok = tooltip is not None and linked == tooltip.name
+    return f"tooltip-link[{host}]", ok, "" if ok else f"{host!r}'s visual shows tooltip page {linked!r}"
 
 
 def _dashboard_checks(sheet: SheetExpectation, page: Page | None, titles: dict[str, str]):

@@ -57,7 +57,9 @@ Working end to end on the sample workbooks:
   PostgreSQL and MySQL; calculated fields translated to DAX (LLM) or flagged for review.
 - **Worksheets → visuals** — shelf-aware mapping (orientation, time axis, series, small
   multiples), Measure Names/Values sheets as tables, maps, and an LLM router for ambiguous
-  sheets, all checked against Power BI's visual catalog.
+  sheets, all checked against Power BI's visual catalog. Read from each sheet: Tableau's default
+  stacking, the custom title, the Tooltip shelf, the sort, and row counts (as `COUNTROWS`
+  measures). A sheet shown in another sheet's tooltip becomes a hidden report-page tooltip.
 - **Dashboards → report pages** with slicers. A worksheet gets a page of its own only if Tableau
   viewers can open it as a tab: a sheet hidden in Tableau and shown on a dashboard is only a
   visual on that dashboard's page.

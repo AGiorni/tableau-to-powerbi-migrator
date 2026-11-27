@@ -153,35 +153,50 @@ doesn't diff every file.
   `_AGG_FUNCTION` doesn't know, so the date becomes a plain column. Book1's "Sales by Category" is
   monthly in Tableau and a flat daily line in Power BI (seen in the step-0 screenshots).
 
-- [ ] **Custom worksheet titles are not migrated.** *(verified 2026-11-25)* Tableau keeps a
+- [x] **Custom worksheet titles are not migrated.** *(verified 2026-11-25)* Tableau keeps a
   sheet's title in `<layout-options><title><formatted-text>` as text runs with placeholders —
   `<Sheet Name>` and field inserts such as `<[State/Province]>` that show the current filter
   ("All"). The parser never reads it, so every visual is titled with the sheet name: Book1's KPI
   table should read "Executive Overview - Profitability …" and the tooltip sheet "Profit Ratio by
   City". Static text maps to the title; dynamic inserts need a measure-driven title.
+  *(resolved 2026-11-27, first pass; DEVLOG)* The visual is titled with the static part of the custom title; dynamic inserts are still left out.
 
-- [ ] **Viz-in-tooltip sheets become ordinary pages.** *(verified 2026-11-25)* A sheet embedded
+- [x] **Viz-in-tooltip sheets become ordinary pages.** *(verified 2026-11-25)* A sheet embedded
   in another sheet's tooltip (`<Sheet name=…>` in the tooltip text, e.g. Book1's "Tooltip: Profit
   Ratio by City") should become a hidden report-page tooltip (page.json `"type": "Tooltip"`,
   `"visibility": "HiddenInViewMode"`) used by the host visual; `map_visuals` makes every worksheet
   a normal page.
+  *(resolved 2026-11-27, first pass; DEVLOG)* A hidden 320×240 tooltip page, linked from the host visual and from every dashboard copy of it; a `tooltip-link` derived check verifies the link.
 
-- [ ] **Tooltip encodings are not migrated.** *(verified 2026-11-25)* Fields on Tableau's tooltip
+- [x] **Tooltip encodings are not migrated.** *(verified 2026-11-25)* Fields on Tableau's tooltip
   shelf (Book1: `sum(Profit)` on both area charts) should go in the visual's `Tooltips` role;
   `_map_worksheet` in [visual_mapper.py](src/t2pbi/mapping/visual_mapper.py) only reads the colour
   encoding.
+  *(resolved 2026-11-27, first pass; DEVLOG)* Measures on the Tooltip shelf go in `Tooltips` (Power BI tooltips take measures; dimensions there are left out).
 
-- [ ] **Count-of-table fields are dropped.** *(verified 2026-11-25)* Tableau's per-table row
+- [x] **Count-of-table fields are dropped.** *(verified 2026-11-25)* Tableau's per-table row
   count (`Orders_4666…:cnt`, shown as "Count of Orders") doesn't resolve to a model field, so
   Book1's KPI table loses Count of Orders and Count of Returns. Map it to a `COUNTROWS` measure.
+  *(resolved 2026-11-27, first pass; DEVLOG)* The model mapper adds a `COUNTROWS` measure, named as Tableau shows the field ("Orders (Count)"), for each logical table a sheet counts.
 
-- [ ] **Area charts are never stacked.** *(verified 2026-11-25)* Tableau stacks area marks by
+- [x] **Area charts are never stacked.** *(verified 2026-11-25)* Tableau stacks area marks by
   default; `_VERTICAL_TYPE` maps `Area` to `areaChart` (overlapping) rather than
   `stackedAreaChart`. Matters once colour splits are migrated.
+  *(resolved 2026-11-27, first pass; DEVLOG)* Area marks map to `stackedAreaChart`; bars split by a colour dimension to stacked `columnChart` / `barChart`. An explicit "Stack Marks: Off" isn't read yet (below).
 
 - [ ] **Map colour measures become bubble sizes.** *(verified 2026-11-25)* `_map_geographic`
   puts the first measure in `Size`; Book1's map colours states by profit ratio (a filled map).
   Azure Map colours by a measure through formatting, so this needs a formatting rule, not a role.
+  Not promoted with the other agent fixes on 2026-11-27: the agent turned on the Azure Maps
+  filled-map layer (`objects.filledMap.show`, `bubbleLayer.show` false) but left the measure in
+  `Size`, and the judge moved only 2 → 3. Colouring regions needs conditional formatting whose JSON
+  hasn't been verified in Desktop. Also open: when a Tableau map is filled (polygons) rather than
+  symbols, since Book1's mark is `Automatic`.
+
+- [ ] **"Stack Marks: Off" isn't read.** *(raised 2026-11-27)* Area marks and colour-split bars
+  are mapped stacked, Tableau's default. A workbook that turns stacking off should map to
+  `areaChart` / clustered bars, but the XML form of that setting isn't documented. As with
+  hidden sheets: save a Book1 variant with Stack Marks Off and diff it.
 
 - [ ] **Dimension-role calculated fields become measures, so colour splits are dropped.**
   *(verified 2026-11-25)* Every calc maps to a measure in
@@ -194,12 +209,13 @@ doesn't diff every file.
   including `current_value` and `allowable_values` — and nothing consumes it. They should become
   Power BI what-if parameters or M parameters. Dead data until then.
 
-- [ ] **Sort direction is never derived from the source.** *(verified 2026-11-24)*
+- [x] **Sort direction is never derived from the source.** *(verified 2026-11-24)*
   `sort_descending` defaults to `True` in [visual_decision.py](src/t2pbi/mapping/visual_decision.py)
   and is never set from the input; [visual_mapper.py](src/t2pbi/mapping/visual_mapper.py) only
   picks the sort *field* (the first measure). A gap since the shelf-aware mapping work on
   2026-08-28. Visible in Book1: the tooltip sheet sorts cities ascending by profit ratio, ours
   descending (the visual judge spotted it, 2026-11-26).
+  *(resolved 2026-11-27, first pass; DEVLOG)* The sheet's own sort, else Tableau's default (the axis dimension in its own order); maps get none.
 
 - [ ] **Unsupported connection kinds emit an empty-table stub.** *(verified 2026-11-24)* Only
   `textscan` (CSV), `excel-direct`, `sqlserver`, `postgres` and `mysql` produce real Power Query.

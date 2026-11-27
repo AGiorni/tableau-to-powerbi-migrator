@@ -6,7 +6,7 @@ The JSON shapes mirror a Power BI Desktop-generated report exactly (see the visu
 
 from __future__ import annotations
 
-from t2pbi.ir.powerbi_ir import FieldKind, PBIFieldRef, PBIReportPage, PBIVisual
+from t2pbi.ir.powerbi_ir import FieldKind, PBIFieldRef, PBIReportPage, PBIVisual, new_object_name
 
 # Root of every Fabric/PBIR JSON schema URL the emitter writes.
 SCHEMA_BASE = "https://developer.microsoft.com/json-schemas/fabric"
@@ -62,8 +62,18 @@ def _visual_body(visual: PBIVisual, query: dict) -> dict:
         "query": query,
         "drillFilterOtherVisuals": True,
     }
+    container: dict = {}
     if visual.title:
-        body["visualContainerObjects"] = {"title": title_object(visual.title)}
+        container["title"] = title_object(visual.title)
+    if visual.tooltip_page:
+        # Hovering this visual shows that report page as its tooltip.
+        container["visualTooltip"] = [{"properties": {
+            "show": literal("true"),
+            "type": string_literal("Canvas"),
+            "section": string_literal(visual.tooltip_page),
+        }}]
+    if container:
+        body["visualContainerObjects"] = container
     return body
 
 
@@ -84,14 +94,21 @@ def literal(value: str) -> dict:
 
 
 def build_page_json(page: PBIReportPage) -> dict:
-    return {
+    raw: dict = {
         "$schema": f"{SCHEMA_BASE}/item/report/definition/page/2.1.0/schema.json",
         "name": page.name,
         "displayName": page.display_name,
-        "displayOption": "FitToPage",
-        "height": 1080,
-        "width": 1920,
+        "displayOption": "ActualSize" if page.tooltip else "FitToPage",
+        "height": page.height,
+        "width": page.width,
     }
+    if page.tooltip:
+        raw.update({
+            "type": "Tooltip",
+            "visibility": "HiddenInViewMode",
+            "pageBinding": {"name": new_object_name(), "type": "Tooltip"},
+        })
+    return raw
 
 
 def projection(field: PBIFieldRef, active: bool) -> dict:

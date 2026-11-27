@@ -6,7 +6,8 @@ refinement agent what's missing. It states **coverage**, never the mapper's choi
 
 - every field on the sheet's shelves and encodings (rows, columns, colour, size, text, label,
   tooltip; detail too on maps), with its aggregation or date level, must appear in the visual;
-- the title Tableau displays (static part); whether the sheet is a viz-in-tooltip; its sort;
+- the title Tableau displays (static part); whether the sheet is a viz-in-tooltip, and then which
+  sheets' tooltips show it (their visuals must link to it); its sort;
 - for dashboards, the sheets they show and the slicers for their filter cards;
 - where the sheet is seen: a sheet hidden in Tableau and shown on a dashboard has no tab of its
   own, so it's expected only as a visual on that dashboard's page, not as a page.
@@ -18,8 +19,6 @@ hand-written oracle is measured against ``samples/Book1/expected.toml`` in the t
 
 from __future__ import annotations
 
-import re
-
 from t2pbi.fidelity.expectations import FieldSpec, SheetExpectation, WorkbookExpectations
 from t2pbi.ir.tableau_ir import (
     TableauCalculatedField,
@@ -27,6 +26,7 @@ from t2pbi.ir.tableau_ir import (
     TableauRole,
     TableauWorkbook,
     TableauWorksheet,
+    counted_table,
     strip_brackets,
 )
 
@@ -35,8 +35,6 @@ _DATE_LEVELS = {"yr": "year", "tyr": "year", "qr": "quarter", "tqr": "quarter",
                 "mn": "month", "tmn": "month", "dy": "day", "tdy": "day"}
 _AGGREGATIONS = {"sum": "sum", "avg": "avg", "cnt": "count", "cntd": "countd",
                  "min": "min", "max": "max", "median": "median"}
-# Tableau's per-table row count shows up as "<Table>_<32 hex digits>" with a count aggregation.
-_TABLE_COUNT = re.compile(r"^(.*)_[0-9A-Fa-f]{32}$")
 _ENCODINGS = ("color", "size", "text", "label", "tooltip")
 
 
@@ -53,6 +51,8 @@ def derive_expectations(workbook: TableauWorkbook, workbook_file: str) -> Workbo
         shown_on = [d.name for d in workbook.dashboards if ws.name in d.worksheet_names]
         if ws.hidden and shown_on and sheet.kind != "tooltip":
             sheet.page = shown_on[0]
+        if sheet.kind == "tooltip":
+            sheet.tooltip_hosts = [w.name for w in workbook.worksheets if ws.name in w.tooltip_sheets]
         sheets.append(sheet)
     for dashboard in workbook.dashboards:
         contains = list(dict.fromkeys(z.worksheet for z in dashboard.zones if z.kind == "worksheet" and z.worksheet))
@@ -95,9 +95,9 @@ def field_spec(ref: TableauFieldRef, calcs: dict[str, TableauCalculatedField]) -
     """The field spec a Tableau column instance should become in Power BI."""
 
     name, agg = ref.field, ref.aggregation
-    table = _TABLE_COUNT.match(name)
-    if table and agg in ("cnt", "cntd"):
-        return FieldSpec(table.group(1), "rowcount")
+    table = counted_table(ref)
+    if table is not None:
+        return FieldSpec(table, "rowcount")
     calc = calcs.get(name)
     if calc is not None:
         if agg == "usr" or calc.role is TableauRole.MEASURE:

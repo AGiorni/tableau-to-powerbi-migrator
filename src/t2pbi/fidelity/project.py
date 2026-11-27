@@ -24,6 +24,8 @@ class Visual:
     roles: dict[str, list[dict]] = field(default_factory=dict)
     # The visual's sort, in order: (field expression, "Ascending" | "Descending").
     sort: list[tuple[dict, str]] = field(default_factory=list)
+    # The report-page tooltip shown on hover: that page's name (from visualTooltip's section).
+    tooltip_page: str | None = None
 
 
 @dataclass
@@ -114,7 +116,16 @@ def _read_visual(path: Path) -> Visual:
         title=_title(body),
         roles=roles,
         sort=sort,
+        tooltip_page=_tooltip_page(body),
     )
+
+
+def _tooltip_page(body: dict) -> str | None:
+    try:
+        value = body["visualContainerObjects"]["visualTooltip"][0]["properties"]["section"]["expr"]["Literal"]["Value"]
+    except (KeyError, IndexError, TypeError):
+        return None
+    return value[1:-1] if len(value) >= 2 and value[0] == value[-1] == "'" else value
 
 
 def _title(body: dict) -> str | None:

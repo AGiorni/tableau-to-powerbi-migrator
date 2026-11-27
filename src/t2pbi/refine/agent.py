@@ -218,8 +218,8 @@ def make_tools(
         return files.read_page(page_name or page)
 
     def read_visual(visual: str, page_name: str | None = None) -> str:
-        """A visual's visual.json; `visual` is its name or its title. On your page unless
-        `page_name` names another."""
+        """A visual's visual.json; `visual` is its name, its title, or the Tableau sheet it shows.
+        On your page unless `page_name` names another."""
         return files.read_visual(page_name or page, visual)
 
     def write_page(content: str, page_name: str | None = None) -> str:

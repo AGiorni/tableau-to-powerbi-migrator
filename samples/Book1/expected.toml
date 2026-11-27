@@ -40,11 +40,6 @@ values."Quantity:sum" = "38,654"
 values."Sales:sum" = "$2,326,534.35"
 values."Sales per Customer:measure" = "2,908"
 values."profit ratio:measure" = "0"
-known_gaps."title" = "custom worksheet titles are not migrated (the sheet name is used)"
-known_gaps."fields[Orders:rowcount]" = "Tableau's count-of-table fields (Count of Orders) are dropped"
-known_gaps."fields[Returns:rowcount]" = "Tableau's count-of-table fields (Count of Returns) are dropped"
-known_gaps."value[Orders:rowcount]" = "Tableau's count-of-table fields (Count of Orders) are dropped"
-known_gaps."value[Returns:rowcount]" = "Tableau's count-of-table fields (Count of Returns) are dropped"
 known_gaps."value[Profit per order:measure]" = "calculated fields stay BLANK() without the LLM (run with --llm)"
 known_gaps."value[Sales per Customer:measure]" = "calculated fields stay BLANK() without the LLM (run with --llm)"
 known_gaps."value[profit ratio:measure]" = "calculated fields stay BLANK() without the LLM (run with --llm)"
@@ -65,11 +60,9 @@ roles.Y = ["Sales:sum"]
 roles.Rows = ["Category"]
 roles.Series = ["Order Profitable?"]
 roles.Tooltips = ["Profit:sum"]
-known_gaps."visual-type" = "Tableau stacks area marks; the mapper always emits areaChart"
 known_gaps."Category[Order Date:month]" = "date parts on shelves (tmn:) are ignored, so the axis is daily"
 known_gaps."Category:no-extras" = "date parts on shelves (tmn:) are ignored: plain Order Date is bound"
 known_gaps."Series[Order Profitable?]" = "dimension calculations become measures, so the colour split is dropped"
-known_gaps."Tooltips[Profit:sum]" = "tooltip encodings are not migrated"
 
 [[sheet]]
 name = "Sales by segment"
@@ -81,11 +74,9 @@ roles.Y = ["Sales:sum"]
 roles.Rows = ["Segment"]
 roles.Series = ["Order Profitable?"]
 roles.Tooltips = ["Profit:sum"]
-known_gaps."visual-type" = "Tableau stacks area marks; the mapper always emits areaChart"
 known_gaps."Category[Order Date:month]" = "date parts on shelves (tmn:) are ignored, so the axis is daily"
 known_gaps."Category:no-extras" = "date parts on shelves (tmn:) are ignored: plain Order Date is bound"
 known_gaps."Series[Order Profitable?]" = "dimension calculations become measures, so the colour split is dropped"
-known_gaps."Tooltips[Profit:sum]" = "tooltip encodings are not migrated"
 
 [[sheet]]
 name = "Tooltip: Profit Ratio by City"
@@ -98,10 +89,8 @@ visual = ["clusteredBarChart"]
 roles.Category = ["City"]
 roles.Y = ["profit ratio:measure"]
 sort = { by = "profit ratio:measure", direction = "ascending" }
-known_gaps."title" = "custom worksheet titles are not migrated (the sheet name is used)"
-known_gaps."tooltip-page" = "viz-in-tooltip sheets become ordinary pages"
-known_gaps."hidden" = "viz-in-tooltip sheets become ordinary pages"
-known_gaps."sort" = "sort direction is never derived from the source (always descending)"
+# Its host: hovering the geography map shows this sheet (viz in tooltip).
+tooltip_hosts = ["profit ratio by geography"]
 notes = [
     "Not checked: bars are coloured by profit ratio (a gradient: conditional formatting, not a role).",
     "Not checked: value labels on the bars.",

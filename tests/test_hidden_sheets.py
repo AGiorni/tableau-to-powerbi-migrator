@@ -36,7 +36,8 @@ def test_hidden_sheets_on_a_dashboard_get_no_page_of_their_own(book1_hidden_twb,
     assert {p.display_name for p in project.pages} == {"Executive Overview", TOOLTIP}
     # The dashboard still shows all four, as visuals.
     titles = {v.title for v in project.page("Executive Overview").visuals}
-    assert DASHBOARD_SHEETS <= titles
+    workbook = parse_workbook(load_workbook(book1_hidden_twb))
+    assert {ws.title or ws.name for ws in workbook.worksheets if ws.name in DASHBOARD_SHEETS} <= titles
     infos = {i.object_name for i in result.report.issues if "no page of its own" in i.message}
     assert infos == DASHBOARD_SHEETS
 

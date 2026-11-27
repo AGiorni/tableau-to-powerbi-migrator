@@ -467,7 +467,7 @@ html { scroll-behavior: smooth; }
         <line class="ln" x1="376" y1="398" x2="454" y2="398" marker-end="url(#bh)"/>
         <text class="t-lab" x="415" y="391" text-anchor="middle">yes</text>
         <rect class="box-out" x="456" y="368" width="328" height="60" rx="6"/>
-        <text class="t-name" x="472" y="389">clusteredBarChart</text>
+        <text class="t-name" x="472" y="389">clusteredBarChart / barChart</text>
         <text class="t-desc" x="472" y="406">Category ← row dims · Y ← col measures</text>
         <text class="t-desc" x="472" y="421">Rows ← col dims · Series ← colour dims</text>
         <line class="ln" x1="196" y1="428" x2="196" y2="454" marker-end="url(#bh)"/>
@@ -475,7 +475,7 @@ html { scroll-behavior: smooth; }
 
         <!-- r5 vertical -->
         <rect class="box-out" x="16" y="456" width="360" height="60" rx="6"/>
-        <text class="t-name" x="32" y="477">column / line / area chart</text>
+        <text class="t-name" x="32" y="477">column / line / stacked area chart</text>
         <text class="t-desc" x="32" y="494">Category ← col dims · Y ← row measures</text>
         <text class="t-desc" x="32" y="509">Rows ← row dims · Series ← colour dims</text>
 
@@ -491,10 +491,10 @@ html { scroll-behavior: smooth; }
         <rect class="box" x="16" y="556" width="790" height="70" rx="6"/>
         <text x="32" y="580"><tspan class="t-name">enforce_wells(visual_type, wells)</tspan><tspan class="t-desc">  checked against visual_catalog.json</tspan></text>
         <text class="t-desc" x="32" y="598">drops unknown roles and wrong field kinds · trims to max per role · warns on missing required roles</text>
-        <text class="t-desc" x="32" y="615">→ one PBIVisual on its own page, 1840 × 1000 · sort ← 1st measure, <tspan class="t-warn">always descending</tspan></text>
+        <text class="t-desc" x="32" y="615">→ one PBIVisual · title ← custom title · Tooltips ← Tooltip shelf · sort ← the sheet's, else axis A→Z</text>
       </svg>
     </div>
-    <figcaption>"Rows" is Power BI's small-multiples role, not "SmallMultiples": a dimension sharing the measure's shelf is a trellis. A map sheet with no dimensions, or a table sheet with no fields, also goes to the router. A worksheet is skipped, with a warning, when no field resolves, the router gives up, or nothing survives <span class="mono">enforce_wells</span>.</figcaption>
+    <figcaption>"Rows" is Power BI's small-multiples role, not "SmallMultiples": a dimension sharing the measure's shelf is a trellis. A map sheet with no dimensions, or a table sheet with no fields, also goes to the router. A worksheet is skipped, with a warning, when no field resolves, the router gives up, or nothing survives <span class="mono">enforce_wells</span>. Read from the sheet, never assumed: Tableau's default stacking (area marks; bars split by a colour dimension become stacked <span class="mono">columnChart</span>/<span class="mono">barChart</span>), the static part of the custom title, measures on the Tooltip shelf, and the sheet's sort (else the axis dimension in its own order, Tableau's default; maps get none). A row count of a logical table ("Orders (Count)") binds to the <span class="mono">COUNTROWS</span> measure the model mapper adds. Not yet: an explicit "Stack Marks: Off", and colouring a map's regions by a measure.</figcaption>
   </figure>
 
   <div class="cols">
@@ -526,8 +526,9 @@ html { scroll-behavior: smooth; }
         <tr><td>Calculated field</td><td>Measure</td><td>On the first table of its datasource, body <code>BLANK()</code> plus a TODO description until translation fills it. <span class="dropped">Every calc, including dimension-role ones.</span></td></tr>
         <tr><td>Join</td><td>Relationship</td><td>Many-to-one, single direction, always. A warning asks you to verify. Missing key columns are added hidden, with the type copied from the other side.</td></tr>
         <tr><td>Connection</td><td>M partition</td><td><code>textscan</code> (CSV), <code>excel-direct</code>, <code>sqlserver</code>, <code>postgres</code>, <code>mysql</code>. File sources get strict <code>Table.TransformColumnTypes</code>. <span class="dropped">Anything else: empty-table stub.</span></td></tr>
+        <tr><td>Row count ("Orders (Count)")</td><td>Measure</td><td><code>COUNTROWS('&lt;table&gt;')</code>, on the table named after the logical table (or the model's only table).</td></tr>
         <tr><td>Parameter</td><td>—</td><td><span class="dropped">Parsed, then dropped.</span></td></tr>
-        <tr><td>Worksheet</td><td>1 visual, + a page if visible</td><td>See the decision chart above. Hidden and on a dashboard: only the visual, on the dashboard's page.</td></tr>
+        <tr><td>Worksheet</td><td>1 visual, + a page if visible</td><td>See the decision chart above. Hidden and on a dashboard: only the visual, on the dashboard's page. Shown in another sheet's tooltip: a hidden 320×240 tooltip page, linked from every copy of the host visual.</td></tr>
         <tr><td>Dashboard</td><td>Page</td><td>Copied visuals placed by zone, plus column slicers.</td></tr>
       </tbody>
     </table>
@@ -706,7 +707,7 @@ python scripts\snapshot_outputs.py compare a.json b.json</pre>
 </section>
 
 <footer>
-  Checked against <span class="mono">main</span> after validator errors joined the work list (exit code 1 when errors remain), 27 Nov 2026. If the code has moved since, trust the code, and update this map.
+  Checked against <span class="mono">main</span> after the agent's proven fixes moved into the first pass, 27 Nov 2026. If the code has moved since, trust the code, and update this map.
 </footer>
 
 </div>

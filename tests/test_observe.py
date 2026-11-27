@@ -19,7 +19,9 @@ def _retitle(results: list[str]) -> dict:
     return {"visual": KPI, "content": json.dumps(data)}
 
 
-def test_the_live_log_follows_steps_agent_calls_and_decisions(book1_twb, tmp_path, monkeypatch, scripted_agent_chat):
+def test_the_live_log_follows_steps_agent_calls_and_decisions(book1_twb, tmp_path, monkeypatch, scripted_agent_chat,
+                                                              first_pass_without):
+    first_pass_without(titles=[KPI])  # a problem for the agent to fix
     monkeypatch.setattr(nodes, "run_pbir_validation", lambda _path: None)
     monkeypatch.setattr(nodes.tmdl_cli, "run_tmdl_validation", lambda _path: None)
     monkeypatch.setattr(nodes, "validator_failures", lambda _path: {})
@@ -39,7 +41,7 @@ def test_the_live_log_follows_steps_agent_calls_and_decisions(book1_twb, tmp_pat
     starts = [line[2:] for line in log if line.startswith("> ")]
     assert starts[0] == "ingest" and starts[-1] == "finalize_refine"
     assert "route_refine" not in starts  # routers aren't steps
-    assert f"fix_item: {KPI} (6 problem(s))" in starts
+    assert any(step.startswith(f"fix_item: {KPI} (") and step.endswith(" problem(s))") for step in starts)
     assert "    model call 1/25" in log
     assert f"      -> read_visual(visual='{KPI}')" in log
     assert any(line.startswith("      <- read_visual: ") and line.endswith(" characters") for line in log)

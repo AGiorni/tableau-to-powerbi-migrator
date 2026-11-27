@@ -214,7 +214,8 @@ def test_refine_builds_a_workspace_and_a_work_list(book1_twb, tmp_path, monkeypa
     pages = {item.page: item for item in state.work_items}
     # From the workbook alone (no oracle): the known Book1 gaps show up as work.
     assert "fields[Order Date:month]" in {p.check for p in pages["Sales by Category"].problems}
-    assert "tooltip-page" in {p.check for p in pages["Tooltip: Profit Ratio by City"].problems}
+    # The first pass already makes the viz-in-tooltip sheet a tooltip page, linked from the map.
+    assert not {"tooltip-page", "hidden"} & {p.check for p in pages["Tooltip: Profit Ratio by City"].problems}
     # Untranslated calcs are problems on the pages that show them.
     assert any(p.check == "report:measure[profit ratio]" for p in pages["Tooltip: Profit Ratio by City"].problems)
     assert any(i.stage == "refine" and i.message.startswith("To refine") for i in state.issues)
@@ -309,12 +310,14 @@ def test_open_desktop_judges_pages_only(book1_hidden_twb, tmp_path, monkeypatch)
     assert any("1 of 2 page(s)" in m for m in messages)
 
 
-def test_refine_loop_keeps_good_changes_and_reverts_bad_ones(book1_twb, tmp_path, monkeypatch, scripted_agent_chat):
+def test_refine_loop_keeps_good_changes_and_reverts_bad_ones(book1_twb, tmp_path, monkeypatch, scripted_agent_chat,
+                                                              first_pass_without):
     monkeypatch.setattr(nodes, "run_pbir_validation", lambda _path: None)
     monkeypatch.setattr(nodes.tmdl_cli, "run_tmdl_validation", lambda _path: None)
     monkeypatch.setattr(nodes, "validator_failures", lambda _path: {})
     monkeypatch.setattr(nodes, "report_errors", lambda _path: [])
     kpi, tip, geo = "Key Performance Indicators", "Tooltip: Profit Ratio by City", "profit ratio by geography"
+    first_pass_without(titles=[kpi], tooltip_pages=[tip])  # problems for the agent to fix
     chat = scripted_agent_chat(scripts=[
         # Run 1, "Key Performance Indicators" (most problems): the title Tableau displays.
         [("read_visual", {"visual": kpi}),
@@ -363,9 +366,10 @@ def test_refine_loop_keeps_good_changes_and_reverts_bad_ones(book1_twb, tmp_path
     assert workspace.diff() == ""
     assert "Tooltip: Profit Ratio by City::fields[profit ratio:measure]" not in state.failing_checks
     for fixed in ("Key Performance Indicators::title", "Tooltip: Profit Ratio by City::tooltip-page",
-                  "Tooltip: Profit Ratio by City::hidden"):
+                  "Tooltip: Profit Ratio by City::hidden",
+                  "Tooltip: Profit Ratio by City::tooltip-link[profit ratio by geography]"):
         assert fixed not in state.failing_checks
-    assert len(state.failing_checks) == state.failing_at_start - 3
+    assert len(state.failing_checks) == state.failing_at_start - 4
 
     summary = [i for i in state.issues if i.stage == "refine" and i.object_name == "summary"]
     assert summary and "kept 2 of 3" in summary[0].message
@@ -471,9 +475,10 @@ def test_a_validator_error_left_by_the_first_pass_is_work_for_the_agent(book1_tw
     # The first pass reported it, and the agent's brief listed it as a problem on its page.
     typo = f"[{misspelt['name']}x]"
     assert any(i.stage == "pbir" and typo in i.message for i in result.report.issues if i.severity is IssueSeverity.ERROR)
-    assert "[validator] validator: visual 'Key Performance Indicators'" in chat.briefs[0]
+    # Validator errors name the visual by its title: the KPI table shows its custom title.
+    assert "[validator] validator: visual 'Executive Overview - Profitability'" in chat.briefs[0]
     kept = [i for i in result.report.issues if i.message.startswith("Kept as commit")]
-    assert kept and "validator: visual 'Key Performance Indicators'" in (kept[0].detail or "")
+    assert kept and "validator: visual 'Executive Overview - Profitability'" in (kept[0].detail or "")
     # Fixed: no validator error remains, even though the first pass's report still has it.
     assert not [e for e in result.errors if "validator:" in e or e.startswith("pbir")]
 
@@ -487,7 +492,7 @@ def test_errors_the_agent_leaves_are_reported_at_the_end(book1_twb, tmp_path, mo
     result = migrate(book1_twb, tmp_path, context)
 
     remaining = [e for e in result.errors if "validator:" in e]
-    assert remaining and remaining[0].startswith("Key Performance Indicators::validator: visual 'Key Performance")
+    assert remaining and remaining[0].startswith("Key Performance Indicators::validator: visual 'Executive Overview")
 
 
 def test_commit_subjects_fit_git_conventions():

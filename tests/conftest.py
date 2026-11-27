@@ -173,3 +173,46 @@ def scripted_agent_chat() -> type[ScriptedAgentChat]:
     """The :class:`ScriptedAgentChat` class."""
 
     return ScriptedAgentChat
+
+
+@pytest.fixture
+def first_pass_without(monkeypatch):
+    """Make the first pass write a project with some of its own fixes undone, so the refinement
+    loop has those problems to work on: ``first_pass_without(titles=["Key Performance
+    Indicators"], tooltip_pages=["Tooltip: Profit Ratio by City"])`` titles those sheets' visuals
+    with the sheet name and turns those tooltip pages back into ordinary pages, with no host link."""
+
+    import json
+
+    from t2pbi.graph import nodes
+
+    def undo(titles: tuple[str, ...] | list[str] = (), tooltip_pages: tuple[str, ...] | list[str] = ()) -> None:
+        original = nodes.assemble_pbip
+
+        def assemble(*args, **kwargs):
+            pbip = original(*args, **kwargs)
+            pages = list(Path(pbip).parent.glob("*.Report/definition/pages/*/page.json"))
+            names = {}
+            for page_json in pages:
+                page = json.loads(page_json.read_text(encoding="utf-8"))
+                names[page["name"]] = page["displayName"]
+                if page["displayName"] in tooltip_pages:
+                    for key in ("type", "visibility", "pageBinding"):
+                        page.pop(key, None)
+                    page.update({"displayOption": "FitToPage", "width": 1920, "height": 1080})
+                    page_json.write_text(json.dumps(page), encoding="utf-8")
+            for visual_json in Path(pbip).parent.glob("*.Report/definition/pages/*/visuals/*/visual.json"):
+                data = json.loads(visual_json.read_text(encoding="utf-8"))
+                container = data["visual"].get("visualContainerObjects", {})
+                page = names[visual_json.parent.parent.parent.name]
+                if page in titles and "title" in container:
+                    container["title"][0]["properties"]["text"]["expr"]["Literal"]["Value"] = f"'{page}'"
+                link = container.get("visualTooltip")
+                if link and names.get(link[0]["properties"]["section"]["expr"]["Literal"]["Value"].strip("'")) in tooltip_pages:
+                    del container["visualTooltip"]
+                visual_json.write_text(json.dumps(data), encoding="utf-8")
+            return pbip
+
+        monkeypatch.setattr(nodes, "assemble_pbip", assemble)
+
+    return undo

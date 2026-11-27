@@ -28,15 +28,16 @@ def book1_project(tmp_path_factory):
     return out
 
 
-@pytest.fixture
-def files(book1_project, tmp_path):
-    shutil.copytree(book1_project, tmp_path, dirs_exist_ok=True)
-    return ReportFiles(tmp_path)
-
-
 @pytest.fixture(scope="module")
 def workbook():
     return parse_workbook(load_workbook(BOOK1))
+
+
+@pytest.fixture
+def files(book1_project, tmp_path, workbook):
+    shutil.copytree(book1_project, tmp_path, dirs_exist_ok=True)
+    # As fix_item does: a visual can be named by the sheet it shows (its title is the sheet's own).
+    return ReportFiles(tmp_path, {ws.name: ws.title or ws.name for ws in workbook.worksheets})
 
 
 def _tools(files, page=TOOLTIP, errors=()):
@@ -92,10 +93,14 @@ def test_the_agent_reads_and_writes_the_reports_own_files(files):
 
     pages = json.loads(tools["list_pages"].invoke({}))
     assert {p["page"] for p in pages} >= {TOOLTIP, DASHBOARD}
-    original = tools["read_visual"].invoke({"visual": TOOLTIP})  # by title
-    saved = tools["write_visual"].invoke({"visual": TOOLTIP, "content": _retitled(original, "Profit Ratio by City")})
+    original = tools["read_visual"].invoke({"visual": TOOLTIP})  # by the sheet it shows
+    assert tools["read_visual"].invoke({"visual": "Profit Ratio by City"}) == original  # by its title
+    saved = tools["write_visual"].invoke({"visual": TOOLTIP, "content": _retitled(original, "Profit ratio, by city")})
     assert saved == f"Saved visual {json.loads(original)['name']!r} on page {TOOLTIP!r}. Validation: no errors."
-    assert files.overview(TOOLTIP)["visuals"][0]["title"] == "Profit Ratio by City"
+    assert files.overview(TOOLTIP)["visuals"][0]["title"] == "Profit ratio, by city"
+    # On the dashboard, the KPI table shows its custom title; the overview says which sheet it is.
+    kpi = next(v for v in files.overview(DASHBOARD)["visuals"] if v["title"] == "Executive Overview - Profitability")
+    assert kpi["sheet"] == "Key Performance Indicators"
     assert "Profit" in json.loads(tools["list_model_fields"].invoke({}))["Orders"]["columns"]
     assert tools["check_page"].invoke({}) == "checked"
 

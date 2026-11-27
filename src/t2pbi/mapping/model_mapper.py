@@ -33,6 +33,7 @@ from t2pbi.ir.tableau_ir import (
     TableauRelation,
     TableauRole,
     TableauWorkbook,
+    counted_table,
 )
 from t2pbi.mapping.powerquery import build_m_source
 from t2pbi.mapping.report import IssueSeverity, MigrationReport
@@ -95,7 +96,53 @@ def map_model(workbook: TableauWorkbook, report: MigrationReport) -> MappingResu
             r for r in relationships if r.from_table in kept_names and r.to_table in kept_names
         )
 
+    _add_row_count_measures(workbook, model, report)
     return MappingResult(model=model, pending_expressions=pending)
+
+
+def row_count_measure_name(counted: str) -> str:
+    """The measure added for Tableau's row count of logical table ``counted``, named as Tableau's
+    data pane shows that field ("Orders (Count)")."""
+
+    return f"{counted} (Count)"
+
+
+def _add_row_count_measures(workbook: TableauWorkbook, model: PBIModel, report: MigrationReport) -> None:
+    """Tableau counts a logical table's rows with a built-in field; Power BI has none, so each
+    table that a sheet counts gets a ``COUNTROWS`` measure (a count of one column would miss its
+    blank rows)."""
+
+    wanted: list[str] = []
+    for ws in workbook.worksheets:
+        for ref in [*ws.rows, *ws.cols, *ws.measure_names, *(e.field for e in ws.encodings)]:
+            table = counted_table(ref)
+            if table is not None and table not in wanted:
+                wanted.append(table)
+    existing = {m.name for t in model.tables for m in t.measures}
+    for counted in wanted:
+        target = _count_target(counted, model)
+        if target is None:
+            report.add(
+                IssueSeverity.WARNING, "model", counted,
+                f"Tableau counts the rows of {counted!r}, but no migrated table matches it; the count is left out.",
+            )
+            continue
+        name = row_count_measure_name(counted)
+        if name in existing:
+            continue
+        quoted = target.name.replace("'", "''")
+        target.measures.append(PBIMeasure(name=name, expression=f"COUNTROWS('{quoted}')", format_string="#,0"))
+        existing.add(name)
+
+
+def _count_target(counted: str, model: PBIModel) -> PBITable | None:
+    """The table a Tableau row count refers to: the one named after its logical table, or the
+    model's only table (a single-table datasource is named after the datasource instead)."""
+
+    for table in model.tables:
+        if table.name in (counted, _sanitize_name(counted)):
+            return table
+    return model.tables[0] if len(model.tables) == 1 else None
 
 
 def _map_datasource(

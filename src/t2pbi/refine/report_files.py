@@ -6,7 +6,9 @@ and writes the file back whole. After each save it gets the validators' errors a
 This module only finds files and keeps writes inside bounds:
 
 - only ``page.json`` and ``visuals/<name>/visual.json`` under the report's ``definition/pages``
-  folder, found by page display name and visual name (or title), never by a path the agent gives;
+  folder, found by page display name and visual name, title, or the Tableau sheet it shows (a
+  visual's title is the sheet's custom title, so problems that name the sheet still find it),
+  never by a path the agent gives;
 - the content must be a JSON object whose ``name`` is the file's own, so a page or visual can't be
   renamed, nor a write land on another file;
 - a new visual gets a new folder on an existing page; pages aren't created or deleted.
@@ -34,8 +36,12 @@ class ReportFileError(ValueError):
 class ReportFiles:
     """The page and visual files of one migrated project folder (the one holding ``<name>.pbip``)."""
 
-    def __init__(self, project_dir: str | Path) -> None:
+    def __init__(self, project_dir: str | Path, sheet_titles: dict[str, str] | None = None) -> None:
+        """``sheet_titles``: Tableau sheet name -> the title its visual shows, so a visual can be
+        named by the sheet it came from."""
+
         self.root = Path(project_dir)
+        self.sheet_titles = dict(sheet_titles or {})
         reports = list(self.root.glob("*.Report"))
         if len(reports) != 1:
             raise ReportFileError(f"expected one .Report folder in {self.root}, found {len(reports)}")
@@ -72,10 +78,12 @@ class ReportFiles:
             raw = _load(path)
             body = raw.get("visual", {}) if isinstance(raw.get("visual"), dict) else {}
             query = body.get("query", {})
+            title = title_text(body)
             visuals.append({
                 "name": raw.get("name"),
+                "sheet": self._sheet_of(title),
                 "visual_type": body.get("visualType"),
-                "title": title_text(body),
+                "title": title,
                 "roles": {
                     role: [describe(p["field"]) for p in state.get("projections", []) if "field" in p]
                     for role, state in query.get("queryState", {}).items()
@@ -152,10 +160,16 @@ class ReportFiles:
         for path in sorted(page_json.parent.glob("visuals/*/visual.json")):
             raw = _load(path)
             body = raw.get("visual", {}) if isinstance(raw.get("visual"), dict) else {}
-            if visual in (raw.get("name"), title_text(body)):
+            title = title_text(body)
+            if visual in (raw.get("name"), title) or (title is not None and self.sheet_titles.get(visual) == title):
                 return path
         known = [f"{v['name']} ({v['title']})" for p in self.pages() if p["page"] == page for v in p["visuals"]]
         raise ReportFileError(f"no visual {visual!r} on page {page!r}; its visuals are {known}")
+
+
+    def _sheet_of(self, title: str | None) -> str | None:
+        sheets = [sheet for sheet, shown in self.sheet_titles.items() if shown == title]
+        return sheets[0] if len(sheets) == 1 else None
 
 
 def title_text(body: dict) -> str | None:

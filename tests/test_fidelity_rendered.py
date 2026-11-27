@@ -64,11 +64,12 @@ def test_numeric_scoring_on_book1_with_a_fake_engine(tmp_path):
 
     async def fake_query(dax):
         seen.append(dax)
-        # What the real engine returned for the no-LLM output: plain aggregations have values,
-        # the untranslated measures are BLANK.
+        # What the real engine returned for the no-LLM output: plain aggregations and the row-count
+        # measures have values, the untranslated measures are BLANK.
         values = {
             "AVERAGE('Orders'[Discount])": "0.155389", "SUM('Orders'[Profit])": "292296.8115",
             "SUM('Orders'[Quantity])": "38654", "SUM('Orders'[Sales])": "2326534.354",
+            "'Orders'[Orders (Count)]": "10194", "'Returns'[Returns (Count)]": "296",
         }
         row = {}
         for part in dax.removeprefix("EVALUATE ROW(").removesuffix(")").split(', "'):
@@ -82,7 +83,7 @@ def test_numeric_scoring_on_book1_with_a_fake_engine(tmp_path):
     outcomes = {r.check: r.outcome for r in results}
     assert outcomes["value[Sales:sum]"] == "pass"
     assert outcomes["value[Discount:avg]"] == "pass"
-    assert outcomes["value[Orders:rowcount]"] == "gap"  # not bound at all
+    assert outcomes["value[Orders:rowcount]"] == "pass"  # the COUNTROWS measure the first pass adds
     assert outcomes["value[profit ratio:measure]"] == "gap"  # BLANK without the LLM
     assert not [r for r in results if r.outcome in ("fail", "fixed")]
 

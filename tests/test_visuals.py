@@ -7,6 +7,7 @@ import pytest
 from t2pbi.emit.pbir_writer import build_visual_json
 from t2pbi.ingest import load_workbook
 from t2pbi.ir.powerbi_ir import FieldKind, PBIFieldRef, PBIVisual
+from t2pbi.ir.tableau_ir import TableauFieldRef, TableauRole, TableauWorksheet
 from t2pbi.mapping.model_mapper import map_model
 from t2pbi.mapping.report import MigrationReport
 from t2pbi.mapping.visual_mapper import map_visuals
@@ -75,7 +76,7 @@ def test_map_visuals_book1(book1):
     assert "Sales by Category" in by_name
 
     sales_cat = by_name["Sales by Category"].visuals[0]
-    assert sales_cat.visual_type == "areaChart"
+    assert sales_cat.visual_type == "stackedAreaChart"  # Tableau stacks area marks by default
     # cols=Order Date -> X axis (Category well); rows Sales -> Y; Category dim -> Rows (small multiples).
     assert {f.property for f in sales_cat.wells.get("Category", [])} == {"Order Date"}
     assert any(
@@ -138,3 +139,114 @@ def test_map_geographic_worksheet_book1(book1):
     assert geo_visual.wells.get("Size")  # a measure sizes the map
 
 
+
+
+# ------------------------------------------------------------------------------------------------
+# Rules read from the worksheet (moved from what the refinement agent fixed). Each is stated in
+# Tableau's terms, so the synthetic sheets below exercise it apart from Book1.
+# ------------------------------------------------------------------------------------------------
+
+
+def _sheet(**fields) -> TableauWorksheet:
+    return TableauWorksheet(name=fields.pop("name", "S"), datasource_names=["ds"], **fields)
+
+
+def _ref(text: str) -> TableauFieldRef:
+    agg, name, role = text.split(":")
+    return TableauFieldRef(field=name, aggregation=agg, role=TableauRole.MEASURE if role == "qk" else TableauRole.DIMENSION)
+
+
+def _orders_model():
+    from t2pbi.ir.powerbi_ir import PBIColumn, PBIModel, PBITable
+
+    columns = [PBIColumn(name=n, data_type="string", source_column=n) for n in ("Region", "Segment", "Order Date")]
+    columns += [PBIColumn(name=n, data_type="double", source_column=n) for n in ("Sales", "Profit")]
+    return PBIModel(name="M", tables=[PBITable(name="Orders", columns=columns)])
+
+
+def _map(*sheets, dashboards=()):
+    from t2pbi.ir.tableau_ir import TableauWorkbook
+
+    workbook = TableauWorkbook(source_name="W", worksheets=list(sheets), dashboards=list(dashboards))
+    report = MigrationReport()
+    pages = map_visuals(workbook, _orders_model(), report)
+    return {p.display_name: p for p in pages}, report
+
+
+def _roles(visual) -> dict[str, list[str]]:
+    return {role: [f.property for f in fields] for role, fields in visual.wells.items()}
+
+
+def test_bars_split_by_a_colour_dimension_stack_as_tableau_does():
+    from t2pbi.ir.tableau_ir import TableauEncoding
+
+    split = _sheet(name="split", mark_class="Bar", cols=[_ref("none:Region:nk")], rows=[_ref("sum:Sales:qk")],
+                   encodings=[TableauEncoding(kind="color", field=_ref("none:Segment:nk"))])
+    plain = _sheet(name="plain", mark_class="Bar", cols=[_ref("none:Region:nk")], rows=[_ref("sum:Sales:qk")])
+    sideways = split.model_copy(update={"name": "sideways", "cols": split.rows, "rows": split.cols})
+    pages, _ = _map(split, plain, sideways)
+    assert pages["split"].visuals[0].visual_type == "columnChart"  # stacked column
+    assert pages["sideways"].visuals[0].visual_type == "barChart"  # stacked bar
+    assert pages["plain"].visuals[0].visual_type == "clusteredColumnChart"  # nothing to stack
+
+
+def test_the_tooltip_shelf_title_and_default_sort_come_from_the_sheet():
+    from t2pbi.ir.tableau_ir import TableauEncoding
+
+    sheet = _sheet(mark_class="Line", cols=[_ref("none:Order Date:nk")], rows=[_ref("sum:Sales:qk")],
+                   title="Sales over time",
+                   encodings=[TableauEncoding(kind="tooltip", field=_ref("sum:Profit:qk")),
+                              TableauEncoding(kind="tooltip", field=_ref("none:Region:nk"))])
+    visual = _map(sheet)[0]["S"].visuals[0]
+    assert visual.title == "Sales over time"
+    assert _roles(visual)["Tooltips"] == ["Profit"]  # Power BI tooltips take measures
+    # No sort in Tableau: its default, the axis dimension in its own order.
+    assert (visual.sort_field.property, visual.sort_descending) == ("Order Date", False)
+
+
+def test_the_sheets_own_sort_wins():
+    from t2pbi.ir.tableau_ir import TableauSort
+
+    sheet = _sheet(mark_class="Bar", rows=[_ref("none:Region:nk")], cols=[_ref("sum:Sales:qk")],
+                   sorts=[TableauSort(dimension=_ref("none:Region:nk"), by=_ref("sum:Sales:qk"), direction="desc")])
+    visual = _map(sheet)[0]["S"].visuals[0]
+    assert (visual.sort_field.property, visual.sort_descending) == ("Sales", True)
+
+
+def test_a_viz_in_tooltip_sheet_is_a_tooltip_page_linked_from_every_copy_of_its_host():
+    from t2pbi.ir.tableau_ir import TableauDashboard, TableauDashboardZone
+
+    host = _sheet(name="host", mark_class="Bar", cols=[_ref("none:Region:nk")], rows=[_ref("sum:Sales:qk")],
+                  tooltip_sheets=["tip"])
+    tip = _sheet(name="tip", mark_class="Bar", cols=[_ref("none:Segment:nk")], rows=[_ref("sum:Profit:qk")])
+    dashboard = TableauDashboard(name="dash", worksheet_names=["host"],
+                                 zones=[TableauDashboardZone(kind="worksheet", worksheet="host", w=50000, h=50000)])
+    pages, _ = _map(host, tip, dashboards=[dashboard])
+
+    page = pages["tip"]
+    assert (page.tooltip, page.width, page.height) == (True, 320, 240)
+    assert (page.visuals[0].x, page.visuals[0].width) == (0.0, 320.0)
+    assert pages["host"].visuals[0].tooltip_page == page.name
+    assert pages["dash"].visuals[0].tooltip_page == page.name  # the dashboard's copy hovers too
+
+
+def test_a_tableau_row_count_becomes_a_countrows_measure(book1_twb):
+    workbook = parse_workbook(load_workbook(book1_twb))
+    model = map_model(workbook, MigrationReport()).model
+    measures = {m.name: (t.name, m.expression) for t in model.tables for m in t.measures}
+    assert measures["Orders (Count)"] == ("Orders", "COUNTROWS('Orders')")
+    assert measures["Returns (Count)"] == ("Returns", "COUNTROWS('Returns')")
+    kpi = {p.display_name: p for p in map_visuals(workbook, model, MigrationReport())}["Key Performance Indicators"]
+    assert {"Orders (Count)", "Returns (Count)"} <= {f.property for f in kpi.visuals[0].wells["Values"]}
+
+
+def test_a_row_count_of_a_single_table_source_finds_its_table():
+    from t2pbi.ir.powerbi_ir import PBIColumn, PBIModel, PBITable
+    from t2pbi.ir.tableau_ir import TableauWorkbook
+    from t2pbi.mapping.model_mapper import _add_row_count_measures
+
+    # A one-table datasource is named after the datasource, not its logical table.
+    model = PBIModel(name="M", tables=[PBITable(name="Sample - Superstore", columns=[PBIColumn(name="Sales", data_type="double", source_column="Sales")])])
+    sheet = _sheet(measure_names=[_ref("cnt:Orders_" + "A" * 32 + ":qk")])
+    _add_row_count_measures(TableauWorkbook(source_name="W", worksheets=[sheet]), model, MigrationReport())
+    assert [(m.name, m.expression) for m in model.tables[0].measures] == [("Orders (Count)", "COUNTROWS('Sample - Superstore')")]

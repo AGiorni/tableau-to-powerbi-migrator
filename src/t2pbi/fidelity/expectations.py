@@ -99,6 +99,9 @@ class SheetExpectation:
     slicers: list[FieldSpec] = field(default_factory=list)
     # The visual's sort: (field it's sorted by, "ascending" | "descending").
     sort: tuple[FieldSpec, str] | None = None
+    # For a viz-in-tooltip sheet: the sheets whose tooltip shows it. Their visuals must link to
+    # this page as their report-page tooltip.
+    tooltip_hosts: list[str] = field(default_factory=list)
     # Reference numbers as Tableau displays them ("10,194", "15.54%"), per field spec: the
     # sheet's grand total of that field. Checked by fidelity.numeric against the running model.
     values: dict[FieldSpec, str] = field(default_factory=dict)
@@ -140,7 +143,7 @@ def _parse_sort(raw: dict | None) -> tuple[FieldSpec, str] | None:
 
 _SHEET_KEYS = {
     "name", "kind", "page", "title", "visual", "roles", "fields", "contains", "slicers",
-    "sort", "values", "known_gaps", "notes",
+    "sort", "values", "known_gaps", "notes", "tooltip_hosts",
 }
 
 
@@ -159,6 +162,7 @@ def _parse_sheet(raw: dict) -> SheetExpectation:
         contains=list(raw.get("contains", [])),
         slicers=[FieldSpec.parse(f) for f in raw.get("slicers", [])],
         sort=_parse_sort(raw.get("sort")),
+        tooltip_hosts=list(raw.get("tooltip_hosts", [])),
         values={FieldSpec.parse(k): str(v) for k, v in raw.get("values", {}).items()},
         known_gaps=dict(raw.get("known_gaps", {})),
         notes=list(raw.get("notes", [])),

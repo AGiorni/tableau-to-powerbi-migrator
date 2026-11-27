@@ -146,6 +146,9 @@ class PBIVisual(BaseModel):
     wells: dict[str, list[PBIFieldRef]] = Field(default_factory=dict)
     sort_field: PBIFieldRef | None = Field(default=None, description="Field to sort the visual by.")
     sort_descending: bool = True
+    tooltip_page: str | None = Field(
+        default=None, description="Name of the report-page tooltip shown on hover (a viz in tooltip)."
+    )
 
 
 def new_object_name() -> str:
@@ -155,8 +158,12 @@ def new_object_name() -> str:
 
 
 class PBIReportPage(BaseModel):
-    """A report page (one per migrated Tableau worksheet)."""
+    """A report page: a dashboard, a worksheet Tableau viewers can open, or a tooltip page."""
 
     name: str = Field(description="20-char identifier used as the page folder/name.")
     display_name: str
     visuals: list[PBIVisual] = Field(default_factory=list)
+    # A report-page tooltip (Tableau's viz in tooltip) is hidden, small, and shown at actual size.
+    tooltip: bool = False
+    width: int = 1920
+    height: int = 1080

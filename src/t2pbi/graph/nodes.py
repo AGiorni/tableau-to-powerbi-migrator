@@ -450,7 +450,7 @@ def fix_item(state: MigrationState, runtime: Runtime[MigrationContext]) -> dict:
     assert item is not None and state.workbook is not None and state.pbip_path is not None
     workbook, pbip_path = state.workbook, state.pbip_path
     project_dir = Path(pbip_path).parent
-    files = ReportFiles(project_dir)
+    files = ReportFiles(project_dir, {ws.name: ws.title or ws.name for ws in workbook.worksheets})
     try:
         current: dict[str, Any] = files.overview(item.page)
     except ReportFileError as exc:
