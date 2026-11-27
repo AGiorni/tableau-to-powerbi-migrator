@@ -34,9 +34,10 @@ JUDGE_TOLERANCE = 1
 
 
 def failures(results: list[CheckResult]) -> dict[str, str]:
-    """Failing checks keyed ``"<page>::<check>"`` (the key the gate compares) -> detail."""
+    """Failing checks keyed ``"<page>::<check>"`` (the key the gate compares) -> detail. A
+    sheet seen on another sheet's page is keyed by that page, its check naming the visual."""
 
-    return {f"{r.sheet}::{r.check}": r.detail for r in results if not r.passed}
+    return {f"{r.page_name}::{r.page_check}": r.detail for r in results if not r.passed}
 
 
 def derived_failures(workbook: TableauWorkbook, workbook_file: str, project_dir: Path) -> dict[str, str]:

@@ -51,7 +51,10 @@ def parse_workbook(loaded: LoadedWorkbook) -> TableauWorkbook:
             continue
         datasources.append(_parse_datasource(ds_el))
 
+    hidden = _hidden_sheets(root)
     worksheets = [_parse_worksheet(ws) for ws in root.findall("./worksheets/worksheet")]
+    for ws in worksheets:
+        ws.hidden = ws.name in hidden
     dashboards = [_parse_dashboard(db) for db in root.findall("./dashboards/dashboard")]
 
     return TableauWorkbook(
@@ -61,6 +64,17 @@ def parse_workbook(loaded: LoadedWorkbook) -> TableauWorkbook:
         worksheets=worksheets,
         dashboards=dashboards,
     )
+
+
+def _hidden_sheets(root: etree._Element) -> set[str]:
+    """Sheets hidden in Tableau. The flag is on the sheet's window, not the sheet itself:
+    ``<windows><window class='worksheet' hidden='true' name='Sales by Category'>``."""
+
+    return {
+        w.get("name") or ""
+        for w in root.findall("./windows/window")
+        if (w.get("hidden") or "").lower() == "true"
+    }
 
 
 def _is_parameters_datasource(ds_el: etree._Element) -> bool:

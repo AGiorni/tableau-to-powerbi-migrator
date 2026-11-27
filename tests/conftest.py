@@ -70,6 +70,13 @@ def book1_twb() -> Path:
 
 
 @pytest.fixture
+def book1_hidden_twb() -> Path:
+    """Book1 with "Hide All Sheets" on its dashboard: its four worksheets are hidden."""
+
+    return SAMPLES / "Book1_hidden" / "Book1_hidden.twb"
+
+
+@pytest.fixture
 def mapped() -> Callable[[Path], MappingResult]:
     """Factory: workbook path -> its mapped Power BI model (ingest, parse, map_model)."""
 

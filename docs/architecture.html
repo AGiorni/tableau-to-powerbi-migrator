@@ -245,7 +245,7 @@ html { scroll-behavior: smooth; }
         <!-- map_visuals -->
         <rect class="box-llm" x="236" y="528" width="288" height="56" rx="6"/>
         <text class="t-name" x="252" y="550">map_visuals</text>
-        <text class="t-desc" x="252" y="570">worksheets &amp; dashboards → pages</text>
+        <text class="t-desc" x="252" y="570">visible sheets &amp; dashboards → pages</text>
         <rect class="pill" x="478" y="538" width="34" height="16" rx="8"/>
         <text class="t-pill" x="495" y="550" text-anchor="middle">LLM</text>
         <line class="ln" x1="380" y1="584" x2="380" y2="622" marker-end="url(#ah)"/>
@@ -503,8 +503,9 @@ html { scroll-behavior: smooth; }
       <p>Each Tableau dashboard becomes one more page. Its worksheet zones get a copy of that worksheet's visual, rescaled from Tableau's 100 000 × 100 000 grid to the 1920 × 1080 canvas. Its filter zones become slicers, but only for columns (a filter on a measure is noted in the report) and only once per field.</p>
     </div>
     <div>
-      <div class="card-title">Page order</div>
-      <p>All worksheet pages come first, in workbook order, then all dashboard pages. Page and visual folder names are random 20-character ids, so two runs never produce identical paths.</p>
+      <div class="card-title">Which sheets become pages</div>
+      <p>What a Tableau viewer can open as a tab (<span class="mono">_gets_own_page</span>). Every dashboard is a page. A worksheet gets a page of its own if it's visible, or shown in another sheet's tooltip (it becomes the tooltip page). A worksheet hidden in Tableau and shown on a dashboard gets no page: it's only a visual on that dashboard's page (INFO in the report). A hidden worksheet on no dashboard (only in a story, which isn't migrated) keeps its page, with a warning. Tableau marks hidden sheets on their window: <span class="mono">&lt;window hidden='true'&gt;</span>.</p>
+      <p>Worksheet pages come first, in workbook order, then dashboard pages. Page and visual folder names are random 20-character ids, so two runs never produce identical paths.</p>
     </div>
   </div>
 </section>
@@ -526,7 +527,7 @@ html { scroll-behavior: smooth; }
         <tr><td>Join</td><td>Relationship</td><td>Many-to-one, single direction, always. A warning asks you to verify. Missing key columns are added hidden, with the type copied from the other side.</td></tr>
         <tr><td>Connection</td><td>M partition</td><td><code>textscan</code> (CSV), <code>excel-direct</code>, <code>sqlserver</code>, <code>postgres</code>, <code>mysql</code>. File sources get strict <code>Table.TransformColumnTypes</code>. <span class="dropped">Anything else: empty-table stub.</span></td></tr>
         <tr><td>Parameter</td><td>—</td><td><span class="dropped">Parsed, then dropped.</span></td></tr>
-        <tr><td>Worksheet</td><td>Page + 1 visual</td><td>See the decision chart above.</td></tr>
+        <tr><td>Worksheet</td><td>1 visual, + a page if visible</td><td>See the decision chart above. Hidden and on a dashboard: only the visual, on the dashboard's page.</td></tr>
         <tr><td>Dashboard</td><td>Page</td><td>Copied visuals placed by zone, plus column slicers.</td></tr>
       </tbody>
     </table>
@@ -628,7 +629,7 @@ html { scroll-behavior: smooth; }
         <tr><td>graph/nodes.py</td><td>The nine nodes (thin, return partial updates) and the three routers.</td></tr>
         <tr><td>graph/state.py</td><td><code>MigrationState</code> (data, serializable) and <code>MigrationContext</code> (chat model, flags, budgets).</td></tr>
         <tr><td>ingest/loader.py</td><td>Reads <code>.twb</code>, or the shallowest <code>.twb</code> inside a <code>.twbx</code> zip. Extracts are ignored.</td></tr>
-        <tr><td>parse/tableau_parser.py</td><td>XML → Tableau IR: datasources, columns, calcs (LOD flagged), joins, parameters, worksheet shelves, dashboard zones.</td></tr>
+        <tr><td>parse/tableau_parser.py</td><td>XML → Tableau IR: datasources, columns, calcs (LOD flagged), joins, parameters, worksheet shelves, hidden sheets, dashboard zones.</td></tr>
         <tr><td>ir/tableau_ir.py</td><td>Pydantic models for what was read from Tableau.</td></tr>
         <tr><td>ir/powerbi_ir.py</td><td>Pydantic models for what will be written: tables, measures, relationships, pages, visuals.</td></tr>
         <tr><td>mapping/model_mapper.py</td><td>Tables, columns, measures, relationships.</td></tr>
@@ -701,7 +702,7 @@ python scripts\snapshot_outputs.py compare a.json b.json</pre>
 </section>
 
 <footer>
-  Checked against <span class="mono">main</span> after step 4.4 (agent loop; judge on user screenshots only; samples one folder per workbook), 27 Nov 2026. If the code has moved since, trust the code, and update this map.
+  Checked against <span class="mono">main</span> after step 4.4 and the hidden-sheets page rule, 27 Nov 2026. If the code has moved since, trust the code, and update this map.
 </footer>
 
 </div>

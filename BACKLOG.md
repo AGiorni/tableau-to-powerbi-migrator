@@ -97,8 +97,11 @@ doesn't diff every file.
   from the Tableau IR), and upload screenshots per sheet — several allowed — with the missing
   ones shown before the run starts. It writes the layout the graph already reads
   (`screenshots/<sheet>/*.png`, see `samples/README.md`), so the graph needs no change. A place
-  for a human-in-the-loop chat later. Open: whether to ask for hidden worksheets (used only inside
-  dashboards or tooltips) too.
+  for a human-in-the-loop chat later. It should also show the pages the migration will create
+  (dashboards and visible worksheets, per the page rule in DEVLOG 2026-11-27) and let the user
+  untick visible worksheets nobody uses: the workbook can't say whether a visible sheet is a view
+  people open or one the author forgot to hide. Hidden sheets need no screenshots, since they have
+  no page.
 - [ ] **Book1's data lives outside the repo.** *(verified 2026-11-27)* `Book1.twb` reads
   `sample_-_superstore.xls` from an absolute path in one developer's Downloads folder, and the
   migrated model's `File.Contents` points at the same path, so rendering Book1 (`--render`,
@@ -116,6 +119,21 @@ doesn't diff every file.
   a measure.
 
 ## Known gaps in Tableau migration
+
+- [ ] **Stories are not migrated.** *(verified 2026-11-27)* Tableau's third sheet type (a
+  sequence of story points, each showing a sheet or dashboard) isn't parsed at all. A sheet
+  hidden because a story uses it, and on no dashboard, keeps a page of its own with a warning, so
+  nothing is lost. A story could become a set of pages, or bookmarks with a page navigator.
+
+- [ ] **A fix on a worksheet's page doesn't reach its copy on a dashboard.** *(verified
+  2026-11-27)* `_map_dashboards` places a copy of each worksheet's visual on the dashboard page,
+  and the two are written as separate `visual.json` files, which the refinement agent fixes in
+  separate runs. In the last Book1 run they diverged: "Sales by Category" got its Tooltips field
+  on its own page but not on the dashboard, and "Sales by segment" became stacked on the
+  dashboard while its page kept the unstacked chart (that change was refused there). The derived
+  checks don't notice, because a dashboard is checked only for which visuals it contains.
+  Hidden sheets aren't affected: their only visual is the dashboard's. Options: check the
+  dashboard copies like the page visuals, or apply an accepted fix to every copy.
 
 - [ ] **Date parts on shelves are ignored, so time axes plot by day.** *(verified 2026-11-25)*
   Tableau's `tmn:` (truncated month), `yr:`, `qr:` and similar prefixes reach `_resolve_field` in

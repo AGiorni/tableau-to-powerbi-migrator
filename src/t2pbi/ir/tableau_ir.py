@@ -192,6 +192,11 @@ class TableauWorksheet(BaseModel):
         default_factory=list, description="Sheets embedded in this sheet's tooltip (viz in tooltip)."
     )
     sorts: list[TableauSort] = Field(default_factory=list)
+    hidden: bool = Field(
+        default=False,
+        description="Hidden in Tableau: no tab of its own, so viewers see it only inside the "
+        "dashboards (or stories) that show it. Tableau only lets a sheet used in one be hidden.",
+    )
 
 
 class TableauDashboardZone(BaseModel):

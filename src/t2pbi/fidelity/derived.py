@@ -7,7 +7,9 @@ refinement agent what's missing. It states **coverage**, never the mapper's choi
 - every field on the sheet's shelves and encodings (rows, columns, colour, size, text, label,
   tooltip; detail too on maps), with its aggregation or date level, must appear in the visual;
 - the title Tableau displays (static part); whether the sheet is a viz-in-tooltip; its sort;
-- for dashboards, the sheets they show and the slicers for their filter cards.
+- for dashboards, the sheets they show and the slicers for their filter cards;
+- where the sheet is seen: a sheet hidden in Tableau and shown on a dashboard has no tab of its
+  own, so it's expected only as a visual on that dashboard's page, not as a page.
 
 It never states a visual type or which role a field belongs in: those are the mapper's decisions,
 and copying its rules here would only reproduce its blind spots. How close this gets to a
@@ -43,7 +45,15 @@ def derive_expectations(workbook: TableauWorkbook, workbook_file: str) -> Workbo
         strip_brackets(calc.name): calc for ds in workbook.datasources for calc in ds.calculated_fields
     }
     tooltip_sheets = {name for ws in workbook.worksheets for name in ws.tooltip_sheets}
-    sheets = [_worksheet(ws, calcs, ws.name in tooltip_sheets) for ws in workbook.worksheets]
+    sheets = []
+    for ws in workbook.worksheets:
+        sheet = _worksheet(ws, calcs, ws.name in tooltip_sheets)
+        # What Tableau viewers see: a hidden sheet only inside a dashboard (the first one showing
+        # it). A tooltip sheet keeps its page, as the tooltip.
+        shown_on = [d.name for d in workbook.dashboards if ws.name in d.worksheet_names]
+        if ws.hidden and shown_on and sheet.kind != "tooltip":
+            sheet.page = shown_on[0]
+        sheets.append(sheet)
     for dashboard in workbook.dashboards:
         contains = list(dict.fromkeys(z.worksheet for z in dashboard.zones if z.kind == "worksheet" and z.worksheet))
         slicers = []

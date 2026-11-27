@@ -175,7 +175,8 @@ def flag_untranslated(state: MigrationState) -> dict:
 
 
 def map_visuals(state: MigrationState, runtime: Runtime[MigrationContext]) -> dict:
-    """Worksheets and dashboards -> report pages. Unmatched worksheets go to the LLM router."""
+    """Worksheets -> visuals; dashboards and the worksheets Tableau viewers can open -> report
+    pages. Unmatched worksheets go to the LLM router."""
 
     assert state.workbook is not None and state.model is not None
     chat = runtime.context.chat_model
@@ -303,6 +304,16 @@ def open_desktop(state: MigrationState, runtime: Runtime[MigrationContext]) -> d
         return checks_only(f"the screenshots folder {folder} doesn't exist", IssueSeverity.WARNING)
     sheets = [ws.name for ws in state.workbook.worksheets] + [d.name for d in state.workbook.dashboards]
     shots = match_screenshots(folder, sheets)
+    # Only pages are judged. A sheet hidden in Tableau has none (it's a visual on a dashboard), so
+    # its screenshots are left out, but not reported as misnamed.
+    pages = [p.display_name for p in read_project(Path(state.pbip_path).parent).pages]
+    no_page = [s for s in shots.images if s not in pages]
+    if no_page:
+        report.add(
+            IssueSeverity.INFO, "refine", "desktop",
+            f"Screenshots of sheets without a page of their own, not judged: {', '.join(no_page)}.",
+        )
+    shots.images = {s: paths for s, paths in shots.images.items() if s in pages}
     for sheet, folders in shots.ambiguous.items():
         report.add(
             IssueSeverity.WARNING, "refine", sheet,
@@ -320,7 +331,7 @@ def open_desktop(state: MigrationState, runtime: Runtime[MigrationContext]) -> d
             "(put each sheet's images in a folder named after the sheet).",
         )
     if not shots.images:
-        return checks_only("no sheet has screenshots (one folder per sheet, named after it)", IssueSeverity.WARNING)
+        return checks_only("no page has screenshots (one folder per sheet, named after it)", IssueSeverity.WARNING)
     if not bridge.available():
         return checks_only("the Desktop Bridge CLI isn't installed (npm ci in tools/)")
     if not eula_accepted():
@@ -340,10 +351,10 @@ def open_desktop(state: MigrationState, runtime: Runtime[MigrationContext]) -> d
         return checks_only(f"Power BI Desktop couldn't show the project ({exc})", IssueSeverity.WARNING)
     report.add(
         IssueSeverity.INFO, "refine", "desktop",
-        f"Opened in Power BI Desktop (pid {pid}) with data loaded; {len(shots.images)} of {len(sheets)} "
+        f"Opened in Power BI Desktop (pid {pid}) with data loaded; {len(shots.images)} of {len(pages)} "
         "page(s) have Tableau screenshots to be compared with.",
-        detail="Not compared: " + ", ".join(s for s in sheets if s not in shots.images)
-        if len(shots.images) < len(sheets) else None,
+        detail="Not compared: " + ", ".join(p for p in pages if p not in shots.images)
+        if len(shots.images) < len(pages) else None,
     )
     references = {sheet: [str(p) for p in paths] for sheet, paths in shots.images.items()}
     return {"desktop_pid": pid, "references": references, "issues": report.issues}

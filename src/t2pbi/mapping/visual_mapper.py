@@ -1,8 +1,12 @@
 """Map Tableau worksheets to Power BI report pages and visuals.
 
-Each worksheet becomes a page with a single visual. Field references from the worksheet's shelves
-and colour encoding are resolved against the migrated model (columns vs measures) and placed into
-the appropriate field wells for the chosen visual type.
+Each worksheet becomes one visual. Field references from the worksheet's shelves and colour
+encoding are resolved against the migrated model (columns vs measures) and placed into the
+appropriate field wells for the chosen visual type.
+
+Pages follow what a Tableau viewer can open as a tab (:func:`_gets_own_page`): every dashboard is
+a page holding its worksheets' visuals, and a worksheet gets a page of its own unless it's hidden
+in Tableau and shown on a dashboard.
 """
 
 from __future__ import annotations
@@ -60,7 +64,8 @@ def map_visuals(
     report: MigrationReport,
     router: VisualRouter | None = None,
 ) -> list[PBIReportPage]:
-    """Build one report page per worksheet. Worksheets with no mappable fields are skipped.
+    """Build one visual per worksheet, a page for each worksheet a Tableau viewer can open, and a
+    page per dashboard. Worksheets with no mappable fields are skipped.
 
     Deterministic rules decide each worksheet's mapping; ambiguous ones are handed to ``router``
     (default: keep the rule-based guess and flag it). Every mapping is then checked against the
@@ -71,6 +76,11 @@ def map_visuals(
     column_table = {c.name: t.name for t in model.tables for c in t.columns}
     measure_table = {m.name: t.name for t in model.tables for m in t.measures}
     calc_display = _calc_display_map(workbook)
+    tooltip_sheets = {name for ws in workbook.worksheets for name in ws.tooltip_sheets}
+    dashboards_of: dict[str, list[str]] = {}
+    for dash in workbook.dashboards:
+        for name in dash.worksheet_names:
+            dashboards_of.setdefault(name, []).append(dash.name)
 
     pages: list[PBIReportPage] = []
     by_worksheet: dict[str, PBIVisual] = {}
@@ -119,12 +129,41 @@ def map_visuals(
 
         visual = _to_visual(decision, wells, ws.name)
         by_worksheet[ws.name] = visual
-        pages.append(PBIReportPage(name=new_object_name(), display_name=ws.name, visuals=[visual]))
+        if _gets_own_page(ws, ws.name in tooltip_sheets, dashboards_of.get(ws.name, []), report):
+            pages.append(PBIReportPage(name=new_object_name(), display_name=ws.name, visuals=[visual]))
 
     pages.extend(
         _map_dashboards(workbook, by_worksheet, column_table, measure_table, calc_display, report)
     )
     return pages
+
+
+def _gets_own_page(ws: TableauWorksheet, in_a_tooltip: bool, shown_on: list[str], report: MigrationReport) -> bool:
+    """Whether a worksheet becomes a page of its own: what a Tableau viewer can open as a tab.
+
+    - visible: yes — a viewer can open it, whether or not a dashboard also shows it;
+    - shown in another sheet's tooltip: yes, hidden or not (it becomes the tooltip page);
+    - hidden and shown on a dashboard: no — viewers only see it there, so it's only a visual on
+      that dashboard's page;
+    - hidden and on no dashboard (only in a story, which isn't migrated): yes, with a warning,
+      so nothing is lost.
+    """
+
+    if not ws.hidden or in_a_tooltip:
+        return True
+    if shown_on:
+        report.add(
+            IssueSeverity.INFO, "visual", ws.name,
+            "Hidden in Tableau: no page of its own; it's a visual on "
+            + ", ".join(f"'{d}'" for d in shown_on) + ".",
+        )
+        return False
+    report.add(
+        IssueSeverity.WARNING, "visual", ws.name,
+        "Hidden in Tableau but shown on no dashboard (stories aren't migrated); "
+        "kept as a page of its own so nothing is lost.",
+    )
+    return True
 
 
 def _to_visual(

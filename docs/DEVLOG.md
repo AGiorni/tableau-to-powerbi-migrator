@@ -9,6 +9,55 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-27 — Which Tableau sheets become pages: what a viewer can open as a tab
+
+**Before:** every worksheet became a page, and every dashboard became another page with copies
+of its worksheets' visuals. A workbook built the usual way (worksheets assembled into a
+dashboard, then "Hide All Sheets") came out with a page for each hidden worksheet that its
+Tableau users never see as a tab.
+
+**Decision (agreed with the user).** In Power BI terms a Tableau dashboard is a page and a
+worksheet is a visual. A worksheet gets a page of its own only if a Tableau viewer could open it
+as a tab:
+- visible: a page, whether or not a dashboard also shows it. When it's unclear whether a visible
+  sheet is used, an extra page is cheap to delete and a missing one is work to rebuild. Choosing
+  is a scoping question for the future wizard (BACKLOG);
+- shown in another sheet's tooltip: a page, hidden or not, since it becomes the tooltip page;
+- hidden and shown on a dashboard: no page, only its visual on the dashboard's page (INFO);
+- hidden and on no dashboard (Tableau only lets a sheet used in a dashboard or story be hidden,
+  and stories aren't migrated): a page with a warning, so nothing is lost.
+
+**How Tableau records it,** checked on a workbook the user saved from Tableau Public 2026.2
+(`samples/Book1_hidden/`): on the sheet's window, not the sheet,
+`<windows><window class='worksheet' hidden='true' name='Sales by Category'>`. A web search found
+it in neither Tableau's help nor community posts (its published XSDs weren't checked), so the
+fixture is the evidence.
+"Hide All Sheets" left the viz-in-tooltip sheet visible: it isn't on the dashboard.
+
+**Design choices.**
+- *The derived checks state the rule themselves, not by calling the mapper* (as for tooltip
+  pages): a mapper bug must not hide from the checks that measure it. A hidden sheet's checks
+  (fields, title, sort) look for its visual on the dashboard page, found like the dashboard's
+  `contains` check finds it, by sheet name or expected title. Two new checks: `visual` (it's
+  there) and `no-own-page` (no extra page). Book1's output, scored by Book1_hidden's rule, fails
+  `no-own-page` four times, which is what the old mapper did.
+- *A check carries the page it looked at* (`CheckResult.page`). The gate and the work list key
+  on that page, and the check names the visual: `visual 'Sales by Category':
+  fields[Order Date:month]`, so two sheets' checks on one dashboard stay apart and the agent
+  knows which visual to fix. On a dashboard page the agent's brief also gets the Tableau facts of
+  the hidden sheets shown there, since they appear nowhere else.
+- *Only pages are judged.* Screenshots are still matched against every sheet name, so a hidden
+  sheet's folder isn't reported as misnamed, but it's set aside: there's no page to compare.
+- A hidden sheet on two dashboards is checked on the first one only.
+
+**Verified.** Book1_hidden: 2 pages (dashboard + tooltip page), the dashboard still shows all
+four visuals, and every `page`, `visual` and `no-own-page` check passes; Book1's known month gap
+is now found on the dashboard's copy. Book1, superstore and sales_sql output is unchanged
+(snapshot: the only differences are the three new Book1_hidden runs), and Book1 still scores
+45/63 oracle and 34/49 derived. Full suite 189 passed.
+
+---
+
 ## 2026-11-27 — Samples: one folder per workbook, one screenshot folder per sheet
 
 **Decision (the user's, choosing between layouts).** `samples/` was split by kind (`input/`

@@ -9,7 +9,9 @@ Built by the ``assess`` node from three sources (no hand-written oracle needed):
   when Desktop is running).
 
 One item per page, not per check: fixes on one visual interact (binding Order Date by month also
-removes the "unexpected Order Date" failure), so the agent sees a page's problems together.
+removes the "unexpected Order Date" failure), so the agent sees a page's problems together. A sheet
+hidden in Tableau has no page of its own: its problems go to the dashboard page that shows it,
+each naming the visual (``visual 'Sales by Category': fields[Order Date:month]``).
 Everything here is plain data, so the work list lives in the graph state.
 """
 
@@ -80,16 +82,25 @@ def build_work_list(
         if all(p.check != problem.check for p in problems):
             problems.append(problem)
 
+    derived = list(derived)
     for result in derived:
         if not result.passed:
-            add(result.sheet, Problem(source=ProblemSource.DERIVED, check=result.check, detail=result.detail))
+            add(result.page_name, Problem(source=ProblemSource.DERIVED, check=result.page_check, detail=result.detail))
 
     page_names = {p.display_name for p in project.pages}
+    # A sheet hidden in Tableau has no page; its problems belong to the dashboard page it's on.
+    shown_on = {r.sheet: r.page for r in derived if r.page}
     for issue in issues:
         if issue.severity is IssueSeverity.INFO:
             continue
         if issue.stage in _PAGE_STAGES and issue.object_name in page_names:
             add(issue.object_name, Problem(source=ProblemSource.REPORT, check=f"report:{issue.stage}", detail=issue.message))
+        elif issue.stage in _PAGE_STAGES and shown_on.get(issue.object_name) in page_names:
+            add(shown_on[issue.object_name], Problem(
+                source=ProblemSource.REPORT,
+                check=f"visual '{issue.object_name}': report:{issue.stage}",
+                detail=issue.message,
+            ))
         elif issue.stage == "expression":
             # An untranslated calculation is a problem on every page that shows it.
             for page in _pages_using_measure(project, issue.object_name):

@@ -31,6 +31,9 @@ class CheckResult:
     passed: bool
     detail: str = ""
     known_gap: str | None = None
+    # The report page the check looked at, when it isn't the sheet's own (a sheet hidden in
+    # Tableau is checked as a visual on its dashboard's page).
+    page: str | None = None
 
     @property
     def outcome(self) -> Outcome:
@@ -40,6 +43,18 @@ class CheckResult:
             return "pass" if self.passed else "fail"
         return "fixed" if self.passed else "gap"
 
+    @property
+    def page_name(self) -> str:
+        return self.page or self.sheet
+
+    @property
+    def page_check(self) -> str:
+        """The check as seen from its page: on another sheet's page, it names the visual
+        (``visual 'Sales by Category': fields[Order Date:month]``), so two sheets' checks on one
+        dashboard page stay apart."""
+
+        return self.check if self.page_name == self.sheet else f"visual '{self.sheet}': {self.check}"
+
 
 def score_structural(expected: WorkbookExpectations, project: Project) -> list[CheckResult]:
     """Run every structural check for every expected sheet."""
@@ -47,9 +62,10 @@ def score_structural(expected: WorkbookExpectations, project: Project) -> list[C
     results: list[CheckResult] = []
     titles = {s.name: s.title for s in expected.sheets if s.title}
     for sheet in expected.sheets:
+        page = sheet.page if sheet.page_name != sheet.name else None
         for check, passed, detail in _sheet_checks(sheet, project, titles):
             results.append(
-                CheckResult(sheet.name, check, passed, detail, sheet.known_gaps.get(check))
+                CheckResult(sheet.name, check, passed, detail, sheet.known_gaps.get(check), page)
             )
         # value[...] gaps belong to the numeric layer, which checks them itself.
         structural_gaps = {k for k in sheet.known_gaps if not k.startswith("value[")}
@@ -62,6 +78,11 @@ def score_structural(expected: WorkbookExpectations, project: Project) -> list[C
 def _sheet_checks(sheet: SheetExpectation, project: Project, titles: dict[str, str]):
     page = project.page(sheet.page_name)
     yield "page", page is not None, "" if page else f"no page named {sheet.page_name!r}"
+    on_another_page = sheet.page_name != sheet.name
+    if on_another_page and sheet.kind != "dashboard":
+        # Seen only inside another sheet's page in Tableau: a page of its own would be extra.
+        own = project.page(sheet.name)
+        yield "no-own-page", own is None, "" if own is None else f"has a page of its own; Tableau shows it only on {sheet.page_name!r}"
 
     if sheet.kind == "tooltip":
         yield "tooltip-page", bool(page and page.page_type == "Tooltip"), f"type={page and page.page_type}"
@@ -75,7 +96,10 @@ def _sheet_checks(sheet: SheetExpectation, project: Project, titles: dict[str, s
         yield from _dashboard_checks(sheet, page, titles)
         return
 
-    visual = _main_visual(page)
+    visual = _sheet_visual(sheet, page) if on_another_page else _main_visual(page)
+    if on_another_page:
+        titles_there = [v.title for v in page.visuals] if page else []
+        yield "visual", visual is not None, "" if visual else f"visual titles there: {titles_there}"
     if sheet.title is not None:
         actual = visual.title if visual else None
         yield "title", _title_matches(actual, sheet.title), f"got {actual!r}, want {sheet.title!r}…"
@@ -134,6 +158,18 @@ def _main_visual(page: Page | None) -> Visual | None:
     if page is None:
         return None
     return next((v for v in page.visuals if not v.visual_type.endswith("licer")), None)
+
+
+def _sheet_visual(sheet: SheetExpectation, page: Page | None) -> Visual | None:
+    """The visual made from ``sheet`` on another sheet's page (a dashboard), found as the
+    dashboard check finds it: by the sheet's name or by its expected title."""
+
+    if page is None:
+        return None
+    return next(
+        (v for v in page.visuals if v.title == sheet.name or _title_matches(v.title, sheet.title)),
+        None,
+    )
 
 
 # --------------------------------------------------------------------------------------------

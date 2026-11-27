@@ -18,6 +18,7 @@ samples/
 | Sample | What it's for | Screenshots | Oracle |
 |---|---|---|---|
 | [Book1](Book1/) | The real test case: Superstore data, six sheets (a KPI text table, two area charts, a map, a viz-in-tooltip sheet, a dashboard). Fidelity, numbers, pictures, refinement. | yes | yes |
+| [Book1_hidden](Book1_hidden/) | Book1 with its dashboard's sheets hidden: which sheets become pages. | uses Book1's | — |
 | [superstore](superstore/) | Model mapping from a CSV source; its only worksheet has empty shelves. | — | — |
 | [sales_sql](sales_sql/) | Model mapping from a SQL Server source (synthetic: `sql.contoso.com`), no worksheets. | — | — |
 
@@ -30,7 +31,9 @@ Who reads what:
   empty one) isn't compared with a picture. Folder names are matched to sheet names ignoring case,
   spaces and punctuation, so `Tooltip_ Profit Ratio by City` (Windows doesn't allow `:`) is the
   folder of "Tooltip: Profit Ratio by City". The run warns about folders named after no sheet
-  and images outside a sheet's folder.
+  and images outside a sheet's folder. Only pages are judged: a sheet hidden in Tableau has no
+  page of its own (it's a visual on its dashboard), so screenshots are needed for the dashboards
+  and the visible worksheets.
 
 Adding a sample: make `samples/<name>/`, put the workbook in it, and add screenshots and an
 `expected.toml` if it should be scored (format: `src/t2pbi/fidelity/expectations.py`). Commit

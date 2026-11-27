@@ -58,7 +58,9 @@ Working end to end on the sample workbooks:
 - **Worksheets → visuals** — shelf-aware mapping (orientation, time axis, series, small
   multiples), Measure Names/Values sheets as tables, maps, and an LLM router for ambiguous
   sheets, all checked against Power BI's visual catalog.
-- **Dashboards → report pages** with slicers.
+- **Dashboards → report pages** with slicers. A worksheet gets a page of its own only if Tableau
+  viewers can open it as a tab: a sheet hidden in Tableau and shown on a dashboard is only a
+  visual on that dashboard's page.
 - **Validation** — after the build, Microsoft's own checkers read the written files: TOM's TMDL
   serializer for the model and `powerbi-report-author validate` for the report; diagnostics land
   in the migration report.

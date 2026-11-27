@@ -5,7 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from t2pbi.graph import MigrationContext, MigrationState, build_graph, nodes, recursion_limit
+from t2pbi.graph import (
+    MigrationContext,
+    MigrationState,
+    build_graph,
+    migrate,
+    nodes,
+    recursion_limit,
+)
 from t2pbi.ingest import load_workbook
 from t2pbi.ir.tableau_ir import TableauCalculatedField
 from t2pbi.mapping.model_mapper import UNTRANSLATED_DAX
@@ -236,8 +243,9 @@ def test_open_desktop_compares_only_pages_with_a_user_screenshot(book1_twb, tmp_
     monkeypatch.setattr(nodes.bridge, "open_report", lambda pbip: opened.append(pbip) or 4242)
     monkeypatch.setattr(nodes.bridge, "wait_ready", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(nodes, "load_data", no_data)
+    project = migrate(book1_twb, tmp_path / "project", MigrationContext(run_output_validation=False))
     state = MigrationState(
-        input_path=str(book1_twb), out_dir=str(tmp_path), pbip_path=str(tmp_path / "Book1.pbip"),
+        input_path=str(book1_twb), out_dir=str(tmp_path), pbip_path=str(project.pbip_path),
         workbook=parse_workbook(load_workbook(book1_twb)),
     )
 
@@ -268,6 +276,36 @@ def test_open_desktop_compares_only_pages_with_a_user_screenshot(book1_twb, tmp_
         image.unlink()  # left: an ambiguous pair, a misnamed folder, a loose file
     left = open_with(str(shots))
     assert "desktop_pid" not in left and len(opened) == 1
+
+
+def test_open_desktop_judges_pages_only(book1_hidden_twb, tmp_path, monkeypatch):
+    """A sheet hidden in Tableau has no page: its screenshot is set aside, not called misnamed."""
+
+    async def no_data(_pbip):
+        return None
+
+    monkeypatch.setattr(nodes.bridge, "available", lambda: True)
+    monkeypatch.setattr(nodes, "eula_accepted", lambda: True)
+    monkeypatch.setattr(nodes.bridge, "open_report", lambda _pbip: 4242)
+    monkeypatch.setattr(nodes.bridge, "wait_ready", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(nodes, "load_data", no_data)
+    project = migrate(book1_hidden_twb, tmp_path / "project", MigrationContext(run_output_validation=False))
+    shots = tmp_path / "screenshots"
+    for sheet in ("Executive Overview", "Sales by Category"):  # a dashboard, a hidden sheet on it
+        (shots / sheet).mkdir(parents=True)
+        (shots / sheet / "view.png").write_bytes(b"")
+    state = MigrationState(
+        input_path=str(book1_hidden_twb), out_dir=str(tmp_path), pbip_path=str(project.pbip_path),
+        workbook=parse_workbook(load_workbook(book1_hidden_twb)),
+    )
+
+    update = nodes.open_desktop(state, SimpleNamespace(context=MigrationContext(reference_images=str(shots))))
+
+    assert set(update["references"]) == {"Executive Overview"}
+    messages = [i.message for i in update["issues"]]
+    assert any("without a page of their own, not judged: Sales by Category" in m for m in messages)
+    assert not any("named after no sheet" in m for m in messages)
+    assert any("1 of 2 page(s)" in m for m in messages)
 
 
 def test_refine_loop_keeps_good_changes_and_reverts_bad_ones(book1_twb, tmp_path, monkeypatch, scripted_agent_chat):

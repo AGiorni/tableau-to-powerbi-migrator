@@ -51,6 +51,8 @@ Tableau → Power BI correspondences that often matter:
 - The title Tableau displays is the visual's title; filter values Tableau inserts into it can be left out.
 - Maps stay azureMap (Microsoft is retiring map and filledMap). Shading regions instead of
   bubbles is an Azure Maps layer setting these tools can't change yet: report it, don't swap types.
+- A sheet hidden in Tableau has no page of its own: it's a visual on its dashboard's page.
+  Problems named "visual '<sheet>': ..." are about that visual; pass its title as `visual`.
 
 Finish with ONE line, which becomes the commit message:
 "CHANGED: <what you changed>" or "NO CHANGE: <why nothing could be done>".
@@ -91,11 +93,18 @@ def tableau_facts(workbook: TableauWorkbook, sheet: str) -> dict[str, Any]:
         }
     for dash in workbook.dashboards:
         if dash.name == sheet:
-            return {
+            shown = [z.worksheet for z in dash.zones if z.kind == "worksheet"]
+            hidden = [ws.name for ws in workbook.worksheets if ws.hidden and ws.name in shown]
+            facts: dict[str, Any] = {
                 "dashboard": dash.name,
-                "shows_sheets": [z.worksheet for z in dash.zones if z.kind == "worksheet"],
+                "shows_sheets": shown,
                 "filter_cards": [spec(z.field) for z in dash.zones if z.kind == "filter" and z.field],
             }
+            if hidden:
+                # Hidden in Tableau: they have no page of their own, so this page is the only
+                # place their visuals are fixed.
+                facts["hidden_sheets_shown_here"] = {name: tableau_facts(workbook, name) for name in hidden}
+            return facts
     return {"sheet": sheet, "note": "not found in the Tableau workbook"}
 
 
