@@ -35,7 +35,7 @@ checkpointable.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from langgraph.graph import END, START, StateGraph
@@ -45,7 +45,11 @@ from t2pbi.desktop import bridge
 from t2pbi.graph import nodes
 from t2pbi.graph.state import MigrationContext, MigrationState
 from t2pbi.ir.powerbi_ir import PBIModel
-from t2pbi.mapping.report import MigrationReport
+from t2pbi.mapping.report import IssueSeverity, MigrationReport
+from t2pbi.refine.review import VALIDATOR_CHECK
+
+# Report stages of the validators, whose first-pass errors refinement re-measures.
+_VALIDATOR_STAGES = {"tmdl", "pbir"}
 
 
 @dataclass
@@ -55,6 +59,10 @@ class MigrationResult:
     pbip_path: Path
     model: PBIModel
     report: MigrationReport
+    # Errors still in the project when the run ended: ERROR issues, except that after refinement
+    # the validators' first-pass errors are replaced by what they report on the final files (the
+    # agent may have fixed some). Empty = a clean migration; the CLI exits 1 otherwise.
+    errors: list[str] = field(default_factory=list)
 
 
 MigrationGraph = CompiledStateGraph[MigrationState, MigrationContext, MigrationState, MigrationState]
@@ -158,4 +166,17 @@ def migrate(
         pbip_path=Path(state.pbip_path),
         model=state.model,
         report=MigrationReport(issues=state.issues),
+        errors=_remaining_errors(state),
     )
+
+
+def _remaining_errors(state: MigrationState) -> list[str]:
+    refined = state.refine_baseline is not None
+    errors = [
+        f"{i.stage} {i.object_name}: {i.message}"
+        for i in state.issues
+        if i.severity is IssueSeverity.ERROR and not (refined and i.stage in _VALIDATOR_STAGES)
+    ]
+    if refined:  # failing_checks is current after every review: these are the final files' errors
+        errors += [key for key in state.failing_checks if key.split("::", 1)[-1].startswith(VALIDATOR_CHECK)]
+    return errors

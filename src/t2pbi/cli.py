@@ -88,9 +88,10 @@ def _run_migrate(args: argparse.Namespace) -> int:
     result = migrate(args.input, args.out, context)
 
     print(f"Wrote project: {result.pbip_path}")
-    errors = [i for i in result.report.issues if i.severity is IssueSeverity.ERROR]
     warnings = [i for i in result.report.issues if i.severity is IssueSeverity.WARNING]
-    print(f"Issues: {len(errors)} error(s), {len(warnings)} warning(s).")
+    print(f"Issues: {len(result.errors)} error(s) remaining, {len(warnings)} warning(s).")
+    for error in result.errors[:10]:
+        print(f"  {error}")
 
     if args.report:
         Path(args.report).write_text(
@@ -98,7 +99,9 @@ def _run_migrate(args: argparse.Namespace) -> int:
         )
         print(f"Report written: {args.report}")
 
-    return 0
+    # The project is written either way (a partial migration that opens beats none); the exit
+    # code tells a script or CI whether errors remain in it.
+    return 1 if result.errors else 0
 
 
 if __name__ == "__main__":

@@ -39,7 +39,7 @@ from t2pbi.refine.review import (
     failures,
     judge_verdict,
     report_errors,
-    validator_errors,
+    validator_failures,
 )
 from t2pbi.refine.worklist import RefineOutcome, build_work_list
 from t2pbi.refine.workspace import Workspace
@@ -406,10 +406,14 @@ def assess(state: MigrationState, runtime: Runtime[MigrationContext]) -> dict:
                 detail="; ".join(f"{c}: {note}" for c, note in judged.mismatches) or None,
             )
 
-    items = build_work_list(results, state.issues, project, mismatches)
-    failing = failures(results)
+    errors = validator_failures(state.pbip_path)
+    items = build_work_list(results, state.issues, project, mismatches, errors)
+    failing = {**failures(results), **errors}
     if not items:
-        report.add(IssueSeverity.INFO, "refine", "work list", "Nothing to refine: every derived check passes.")
+        report.add(
+            IssueSeverity.INFO, "refine", "work list",
+            "Nothing to refine: every derived check passes and the validators report no errors.",
+        )
     for item in items:
         report.add(
             IssueSeverity.INFO, "refine", item.page,
@@ -466,15 +470,12 @@ def fix_item(state: MigrationState, runtime: Runtime[MigrationContext]) -> dict:
     workbook_file = Path(state.input_path).name
 
     def check_page() -> str:
-        now = derived_failures(workbook, workbook_file, project_dir)
+        now = {**derived_failures(workbook, workbook_file, project_dir), **validator_failures(pbip_path)}
         mine = [f"- {k.split('::', 1)[1]}: {v}" for k, v in now.items() if k.startswith(f"{item.page}::")]
         broke = [f"- {k}: {v}" for k, v in now.items() if k not in state.failing_checks]
-        errors = [f"- {e}" for e in report_errors(pbip_path)]
-        lines = ["Still failing on this page:", *(mine or ["- nothing"])]
+        lines = ["Still failing on this page (checks and validator errors):", *(mine or ["- nothing"])]
         if broke:
             lines += ["Newly failing (the review will refuse the change until these pass again):", *broke]
-        if errors:
-            lines += ["Validator errors (the review will refuse the change):", *errors]
         if item.page in state.page_scores:
             lines.append("The picture is judged against Tableau after you finish.")
         return "\n".join(lines)
@@ -506,8 +507,10 @@ def review_item(state: MigrationState, runtime: Runtime[MigrationContext]) -> di
         report.add(IssueSeverity.INFO, "refine", item.page, f"No change made: {summary or 'no reason given'}.")
         return {"current_item": None, "refine_log": [*state.refine_log, outcome], "issues": report.issues}
 
-    problems = validator_errors(state.pbip_path)
-    after = derived_failures(state.workbook, Path(state.input_path).name, project_dir)
+    after = {
+        **derived_failures(state.workbook, Path(state.input_path).name, project_dir),
+        **validator_failures(state.pbip_path),
+    }
     page_id = _page_id(read_project(project_dir), item.page)
     work = pictures.work_dir(state.out_dir)
     score_before, score_after = state.page_scores.get(item.page), None
@@ -527,7 +530,7 @@ def review_item(state: MigrationState, runtime: Runtime[MigrationContext]) -> di
             if judged.error:
                 report.add(IssueSeverity.INFO, "refine", item.page, f"Change not judged: {judged.error}.")
 
-    verdict = judge_verdict(item, state.failing_checks, after, problems, score_before, score_after)
+    verdict = judge_verdict(item, state.failing_checks, after, score_before, score_after)
     if verdict.accepted:
         commit = workspace.commit(_commit_message(item.page, summary, verdict.reasons))
         if page_id:
@@ -576,7 +579,7 @@ def finalize_refine(state: MigrationState, runtime: Runtime[MigrationContext]) -
     report.add(
         IssueSeverity.INFO, "refine", "summary",
         f"Refinement kept {len(kept)} of {len(state.refine_log)} agent attempt(s); "
-        f"failing derived checks {state.failing_at_start} -> {len(state.failing_checks)}.",
+        f"failing checks and validator errors {state.failing_at_start} -> {len(state.failing_checks)}.",
         detail="; ".join(f"{o.page}: {o.outcome}{f' ({o.commit})' if o.commit else ''}" for o in state.refine_log)
         or None,
     )

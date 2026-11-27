@@ -56,12 +56,26 @@ def run_pbir_validation(pbip_path: str | Path) -> dict | None:
     return run_report_author("validate", str(pbip_path))
 
 
+def iter_diagnostics(result: dict) -> Iterator[dict]:
+    """Each diagnostic item as ``{severity, code, message, file, path}``: ``file`` is the
+    offending file's absolute path when the validator gives one, ``path`` the JSON path in it."""
+
+    for severity, code, message, item in _items(result):
+        yield {"severity": severity, "code": code, "message": message,
+               "file": item.get("file"), "path": item.get("path")}
+
+
 def iter_findings(result: dict) -> Iterator[tuple[IssueSeverity, str, str]]:
     """Yield ``(severity, code, message)`` for each diagnostic item in a validation payload.
 
     Unknown severities count as warnings; environment-only codes are downgraded to info.
     """
 
+    for severity, code, message, _item in _items(result):
+        yield severity, code, message
+
+
+def _items(result: dict) -> Iterator[tuple[IssueSeverity, str, str, dict]]:
     diagnostics = result.get("diagnostics") or {}
     for code, entry in diagnostics.items():
         try:
@@ -70,4 +84,4 @@ def iter_findings(result: dict) -> Iterator[tuple[IssueSeverity, str, str]]:
             base = IssueSeverity.WARNING
         severity = IssueSeverity.INFO if code in _ENV_ONLY_CODES else base
         for item in entry.get("items") or [{}]:
-            yield severity, code, item.get("message") or code
+            yield severity, code, item.get("message") or code, item

@@ -225,12 +225,11 @@ doesn't diff every file.
 
 ## Decisions needed
 
-- [ ] **Should validation errors stop the run?** *(verified 2026-11-25)* Today `validate_model`,
-  `validate_tmdl` and `validate_pbir` only report: the `.pbip` is always written and the CLI always exits 0, so
-  a script can't tell a clean run from a broken one. Options: a non-zero exit code when
-  `MigrationReport.has_errors` (kept for this; currently unused), or a router after
-  `validate_model` that skips `assemble`, or both. Choosing is a behaviour change, not a
-  refactor; the graph makes either a one-edge change.
+- [x] **Should validation errors stop the run?** *(decided 2026-11-27)* No: the project is always
+  written, because a partial migration that opens beats none. Instead the CLI exits 1 when errors
+  remain (`MigrationResult.errors`). After refinement, the validators' first-pass errors are
+  replaced by what they report on the final files, so an error the agent fixed doesn't count.
+  Validator errors are now on the agent's work list too (DEVLOG 2026-11-27).
 
 - [ ] **Surface visual-mapping confidence and rationale, or drop them?** *(verified 2026-11-25)*
   `MappingDecision.confidence` and `.rationale` are filled by the rules, `DefaultRouter` and

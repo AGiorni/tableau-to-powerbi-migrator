@@ -110,8 +110,8 @@ t2pbi migrate .\samples\Book1\Book1.twb --out .\out --refine --reference-images 
 
 - The output folder becomes a git repository: the first pass is the baseline commit, and every
   change the agent makes that is kept is one more commit (`git log`, `git diff` to review it).
-- The work list comes from checks derived from the workbook, problems in the report and — with
-  Power BI Desktop — a visual judge comparing each page with your screenshots of the Tableau sheet
+- The work list comes from checks derived from the workbook, validator errors, problems in the
+  report and — with Power BI Desktop — a visual judge comparing each page with your screenshots of the Tableau sheet
   (`--reference-images`: one folder per sheet, named after it, with one or more images). Pages
   without screenshots aren't compared with a picture; without the option, Desktop isn't opened.
   The small thumbnails Tableau stores in the workbook are not used: too little detail to judge by.
@@ -119,9 +119,11 @@ t2pbi migrate .\samples\Book1\Book1.twb --out .\out --refine --reference-images 
   tooling expects: it reads a page or visual file, looks up visual roles, formatting properties and
   literal encodings with `powerbi-report-author`, and saves the file. Every save is validated —
   Microsoft's PBIR validator plus t2pbi's check that every field exists in the model — and the
-  errors go back to the agent to repair. A deterministic review then keeps a change only if the
-  validators stay clean, no check that passed breaks, and the page improves; otherwise it's
-  reverted and the page gets one retry with the reasons.
+  errors go back to the agent to repair. A deterministic review then keeps a change only if it
+  adds no validator error, no check that passed breaks, and the page improves (a check or a
+  validator error fixed); otherwise it's reverted and the page gets one retry with the reasons.
+- The project is always written. The CLI exits with 1 when errors remain in it at the end (after
+  refinement, the validators' verdict on the final files counts), so scripts and CI can tell.
 - Desktop needs the Desktop Bridge (`npm ci` in `tools/`) and the Authoring MCP's EULA accepted
   by you (`PBI_MODELING_MCP_ACCEPT_EULA=true`) to load the data; without them, or with
   `--no-desktop`, the review uses the checks alone.

@@ -63,7 +63,8 @@ class MigrationState(BaseModel):
     desktop_pid: int | None = None
     references: dict[str, list[str]] = Field(default_factory=dict)
     # assess, then kept current by review_item: pages still to work on (one item per page), the
-    # failing derived checks ("<page>::<check>" -> detail) and the judge's score per page.
+    # failing derived checks and validator errors ("<page>::<check>" -> detail; a validator
+    # error's check starts "validator: ") and the judge's score per page.
     work_items: list[WorkItem] = Field(default_factory=list)
     failing_checks: dict[str, str] = Field(default_factory=dict)
     failing_at_start: int = 0

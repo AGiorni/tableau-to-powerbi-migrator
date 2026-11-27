@@ -312,7 +312,7 @@ def test_open_desktop_judges_pages_only(book1_hidden_twb, tmp_path, monkeypatch)
 def test_refine_loop_keeps_good_changes_and_reverts_bad_ones(book1_twb, tmp_path, monkeypatch, scripted_agent_chat):
     monkeypatch.setattr(nodes, "run_pbir_validation", lambda _path: None)
     monkeypatch.setattr(nodes.tmdl_cli, "run_tmdl_validation", lambda _path: None)
-    monkeypatch.setattr(nodes, "validator_errors", lambda _path: [])
+    monkeypatch.setattr(nodes, "validator_failures", lambda _path: {})
     monkeypatch.setattr(nodes, "report_errors", lambda _path: [])
     kpi, tip, geo = "Key Performance Indicators", "Tooltip: Profit Ratio by City", "profit ratio by geography"
     chat = scripted_agent_chat(scripts=[
@@ -420,6 +420,74 @@ def _shows_tooltip(page_name: str):
             "show": _literal("true"), "type": _literal("'Canvas'"), "section": _literal(f"'{page_name}'"),
         }}]
     return change
+
+
+def _misspell_a_kpi_field(monkeypatch) -> dict:
+    """Make the first pass write the KPI table's first field misspelled (``Sales`` -> ``Salesx``),
+    so the reference check reports an error the first pass leaves behind."""
+
+    from t2pbi.refine import review
+
+    for module in (nodes, review):
+        monkeypatch.setattr(module, "run_pbir_validation", lambda _path: None)
+    monkeypatch.setattr(nodes.tmdl_cli, "run_tmdl_validation", lambda _path: None)
+    monkeypatch.setattr(review, "run_tmdl_validation", lambda _path: None)
+    monkeypatch.setattr(nodes, "report_errors", lambda _path: [])
+    original, misspelt = nodes.assemble_pbip, {}
+
+    def assemble_with_a_typo(*args, **kwargs):
+        pbip = original(*args, **kwargs)
+        for page_json in Path(pbip).parent.glob("*.Report/definition/pages/*/page.json"):
+            if json.loads(page_json.read_text(encoding="utf-8"))["displayName"] == "Key Performance Indicators":
+                visual_json = next(page_json.parent.glob("visuals/*/visual.json"))
+                data = json.loads(visual_json.read_text(encoding="utf-8"))
+                field = data["visual"]["query"]["queryState"]["Values"]["projections"][0]["field"]
+                column = field.get("Aggregation", {}).get("Expression", field).get("Column") or field["Measure"]
+                misspelt["name"] = column["Property"]
+                column["Property"] += "x"
+                visual_json.write_text(json.dumps(data), encoding="utf-8")
+        return pbip
+
+    monkeypatch.setattr(nodes, "assemble_pbip", assemble_with_a_typo)
+    return misspelt
+
+
+def test_a_validator_error_left_by_the_first_pass_is_work_for_the_agent(book1_twb, tmp_path, monkeypatch,
+                                                                        scripted_agent_chat):
+    misspelt = _misspell_a_kpi_field(monkeypatch)
+    kpi = "Key Performance Indicators"
+
+    def respell(results):
+        name = misspelt["name"]
+        return {"visual": kpi, "content": results[-1].replace(f'"{name}x"', f'"{name}"')}
+
+    chat = scripted_agent_chat(scripts=[[("read_visual", {"visual": kpi}), ("write_visual", respell),
+                                         "CHANGED: fixed the misspelt field"]])
+    context = MigrationContext(chat_model=chat, refine=True, use_desktop=False, max_refine_items=1,
+                               max_translation_attempts=1)
+
+    result = migrate(book1_twb, tmp_path, context)
+
+    # The first pass reported it, and the agent's brief listed it as a problem on its page.
+    typo = f"[{misspelt['name']}x]"
+    assert any(i.stage == "pbir" and typo in i.message for i in result.report.issues if i.severity is IssueSeverity.ERROR)
+    assert "[validator] validator: visual 'Key Performance Indicators'" in chat.briefs[0]
+    kept = [i for i in result.report.issues if i.message.startswith("Kept as commit")]
+    assert kept and "validator: visual 'Key Performance Indicators'" in (kept[0].detail or "")
+    # Fixed: no validator error remains, even though the first pass's report still has it.
+    assert not [e for e in result.errors if "validator:" in e or e.startswith("pbir")]
+
+
+def test_errors_the_agent_leaves_are_reported_at_the_end(book1_twb, tmp_path, monkeypatch, scripted_agent_chat):
+    _misspell_a_kpi_field(monkeypatch)
+    chat = scripted_agent_chat(scripts=[["NO CHANGE: can't tell what the field should be"]])
+    context = MigrationContext(chat_model=chat, refine=True, use_desktop=False, max_refine_items=1,
+                               max_translation_attempts=1)
+
+    result = migrate(book1_twb, tmp_path, context)
+
+    remaining = [e for e in result.errors if "validator:" in e]
+    assert remaining and remaining[0].startswith("Key Performance Indicators::validator: visual 'Key Performance")
 
 
 def test_commit_subjects_fit_git_conventions():

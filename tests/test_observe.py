@@ -22,7 +22,7 @@ def _retitle(results: list[str]) -> dict:
 def test_the_live_log_follows_steps_agent_calls_and_decisions(book1_twb, tmp_path, monkeypatch, scripted_agent_chat):
     monkeypatch.setattr(nodes, "run_pbir_validation", lambda _path: None)
     monkeypatch.setattr(nodes.tmdl_cli, "run_tmdl_validation", lambda _path: None)
-    monkeypatch.setattr(nodes, "validator_errors", lambda _path: [])
+    monkeypatch.setattr(nodes, "validator_failures", lambda _path: {})
     monkeypatch.setattr(nodes, "report_errors", lambda _path: [])
     chat = scripted_agent_chat(scripts=[[
         ("read_visual", {"visual": KPI}), ("write_visual", _retitle), "CHANGED: set the title",

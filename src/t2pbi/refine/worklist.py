@@ -3,6 +3,9 @@
 Built by the ``assess`` node from three sources (no hand-written oracle needed):
 
 - ``derived`` — failures of the coverage checks derived from the workbook (fidelity.derived);
+- ``validator`` — errors the validators report in a page's files (Microsoft's PBIR validator and
+  the reference check against the model). Model (TMDL) errors aren't on a page and the agent
+  can't edit the model yet, so they're guarded by the review but not handed to the agent;
 - ``report``  — problems the first pass already reported for a page (fields it couldn't place,
   calculations left untranslated);
 - ``judge``   — the visual judge's mismatches, screenshot against the Tableau reference (from 4.4,
@@ -29,6 +32,7 @@ from t2pbi.mapping.report import IssueSeverity, MigrationIssue
 
 class ProblemSource(str, Enum):
     DERIVED = "derived"
+    VALIDATOR = "validator"
     REPORT = "report"
     JUDGE = "judge"
 
@@ -72,6 +76,7 @@ def build_work_list(
     issues: Iterable[MigrationIssue],
     project: Project,
     judge_mismatches: dict[str, list[tuple[str, str]]] | None = None,
+    validator_errors: dict[str, str] | None = None,
 ) -> list[WorkItem]:
     """Group every problem by page; pages with the most problems first."""
 
@@ -88,6 +93,10 @@ def build_work_list(
             add(result.page_name, Problem(source=ProblemSource.DERIVED, check=result.page_check, detail=result.detail))
 
     page_names = {p.display_name for p in project.pages}
+    for key, detail in (validator_errors or {}).items():
+        page, _, check = key.partition("::")
+        if page in page_names:
+            add(page, Problem(source=ProblemSource.VALIDATOR, check=check, detail=detail))
     # A sheet hidden in Tableau has no page; its problems belong to the dashboard page it's on.
     shown_on = {r.sheet: r.page for r in derived if r.page}
     for issue in issues:

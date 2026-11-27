@@ -9,6 +9,40 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-27 — Validator errors are work for the agent; the gate compares before and after
+
+**The gap (the user's question).** The agent's work list was built from derived checks, page
+issues from the mapper (`visual`, `dashboard`) and untranslated calculations. Validator errors
+(Microsoft's PBIR and TMDL checkers, and the reference check) were reported but never handed to
+the agent. Worse, the review gate's first rule was absolute ("validators reject it" on any
+error), so one error left by the first pass would have refused every change on every page,
+including one that fixed it. It never showed only because every sample's first pass is
+validator-clean, which CI checks.
+
+**Decision.**
+- *Validator errors are failures like the derived checks.* `review.validator_failures` keys
+  each one by its page: `"<page>::validator: <where>: <what>"`. Reference-check problems carry
+  their file. Microsoft's diagnostics carry the file path, which maps to its page folder (the
+  absolute path is dropped from the message, so keys are stable). TMDL errors go under
+  `(model)`. `assess`, `check_page` and `review_item` merge these into the same failure map as
+  the derived checks, so one rule judges both: nothing that passed may fail now (a new
+  validator error is refused, worded "validators reject it"), and a fixed validator error on the
+  page counts as a target fixed.
+- *They're on the work list,* as `validator` problems on their page. Model errors aren't, since
+  the agent can't edit the model yet; the gate still refuses a change that adds one.
+- *Answering the open decision "should validation errors stop the run?": no.* The project is
+  always written, because a partial migration that opens beats none. The CLI now exits 1 when
+  errors remain (`MigrationResult.errors`). After refinement the validators' first-pass issues
+  are replaced by `failing_checks`, which is current after every review, so an error the agent
+  fixed no longer counts.
+
+**Verified.** New end-to-end tests make the first pass write a misspelt field. The reference
+error reaches the agent's brief, a fix is kept with the validator error among its reasons, and
+`errors` ends empty. When the agent leaves it, the error is in `errors` at the end. 201 tests
+pass; output IDENTICAL (snapshot); every sample's CLI run exits 0.
+
+---
+
 ## 2026-11-27 — Watching a run: a live log, and opt-in traces in a local Phoenix
 
 **Why.** A real `--refine` run on Book1 takes about 20 minutes and printed nothing until the end;
