@@ -113,13 +113,20 @@ def check_dax(dax: str | None, model: PBIModel) -> DaxCheck:
     )
 
 
-def schema_context(model: PBIModel) -> str:
-    """Render a compact 'Table: [col1], [col2] ...' listing for prompt grounding."""
+def schema_context(model: PBIModel, display_names: dict[str, str] | None = None) -> str:
+    """Render a compact 'Table: [col1], [col2] ...' listing for prompt grounding.
+
+    Tableau formulas reference fields by internal name (``[job_ads]``, ``[Calculation_1862…]``)
+    while the model's columns and measures carry the names Tableau shows, so the names that
+    differ are listed too (``TableauWorkbook.display_names``)."""
 
     lines: list[str] = []
     for table in model.tables:
         cols = ", ".join(f"[{c.name}]" for c in table.columns)
         lines.append(f"'{table.name}': {cols}")
+    if display_names:
+        lines.append("Field names in the Tableau formulas -> their names in this model:")
+        lines += [f"[{internal}] -> [{shown}]" for internal, shown in display_names.items()]
     return "\n".join(lines)
 
 

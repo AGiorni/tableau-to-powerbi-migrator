@@ -24,6 +24,12 @@ _FUNC_NAMES = {
 }
 
 
+# The annotation naming the Tableau sheet a visual was made from. PBIR annotations are name/value
+# pairs Power BI Desktop ignores and external tools may use; this one ties a visual to its sheet
+# exactly, where titles can repeat (t2pbi.fidelity.project, t2pbi.refine.report_files).
+SHEET_ANNOTATION = "t2pbi.sheet"
+
+
 def build_visual_json(visual: PBIVisual) -> dict:
     query_state = {
         well: {"projections": [projection(f, active=(well == "Category" and i == 0))
@@ -53,6 +59,7 @@ def build_visual_json(visual: PBIVisual) -> dict:
             "tabOrder": visual.tab_order,
         },
         "visual": _visual_body(visual, query),
+        **({"annotations": [{"name": SHEET_ANNOTATION, "value": visual.source_sheet}]} if visual.source_sheet else {}),
     }
 
 

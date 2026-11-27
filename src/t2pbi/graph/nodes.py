@@ -77,9 +77,9 @@ def translate_expressions(state: MigrationState, runtime: Runtime[MigrationConte
     On a repair pass, each field's previous rejection reasons are sent along as feedback.
     """
 
-    assert state.model is not None
+    assert state.model is not None and state.workbook is not None
     chat = runtime.context.chat_model
-    schema = expression_translator.schema_context(state.model)
+    schema = expression_translator.schema_context(state.model, state.workbook.display_names())
     translations = {
         key: expression_translator.translate_calc(
             calc,
@@ -450,7 +450,7 @@ def fix_item(state: MigrationState, runtime: Runtime[MigrationContext]) -> dict:
     assert item is not None and state.workbook is not None and state.pbip_path is not None
     workbook, pbip_path = state.workbook, state.pbip_path
     project_dir = Path(pbip_path).parent
-    files = ReportFiles(project_dir, {ws.name: ws.title or ws.name for ws in workbook.worksheets})
+    files = ReportFiles(project_dir)
     try:
         current: dict[str, Any] = files.overview(item.page)
     except ReportFileError as exc:

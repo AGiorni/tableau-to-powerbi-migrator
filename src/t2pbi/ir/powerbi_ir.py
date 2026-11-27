@@ -149,6 +149,9 @@ class PBIVisual(BaseModel):
     tooltip_page: str | None = Field(
         default=None, description="Name of the report-page tooltip shown on hover (a viz in tooltip)."
     )
+    source_sheet: str | None = Field(
+        default=None, description="The Tableau worksheet this visual was made from (written as a PBIR annotation)."
+    )
 
 
 def new_object_name() -> str:

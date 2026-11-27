@@ -9,6 +9,75 @@ cover. Keep [BACKLOG.md](../BACKLOG.md) in sync when an entry opens or closes wo
 
 ---
 
+## 2026-11-27 — A local corpus of real workbooks, and the general bugs it found
+
+**Why.** Every rule so far was checked on Book1 alone. The user downloaded five Tableau Public
+workbooks (HR attrition, medical device sales, two Superstore dashboards, an Australian skills
+tracker: 95 sheets, 13 dashboards). They live in `samples/local/<name>/`, gitignored: the
+repository is public and the workbooks belong to their authors.
+`python scripts/fidelity.py --local` migrates each one (both validators on) and scores it on the
+derived checks; no oracle needed. The failures are grouped by kind across the corpus.
+
+**Where the time went:** the first run scored 483/907 (53%), against Book1's 88%. Every fix
+below is a general one, found by a pattern across workbooks, not a workbook-specific patch:
+
+| Fix | Corpus derived checks | Validator errors |
+|---|---|---|
+| (start) | 483/907 | 19 |
+| Fields with display names resolved | 529/907 | 19 |
+| Cards, scatter plots, never a chart without its required roles | 700/907 | 0 |
+| Column-instance parser: instance numbers, table calcs, visual totals | 714/903 | 0 |
+| Pie and treemap rules | 741/903 (82%) | 0 |
+
+- *Display names (the largest bug).* The model mapper names columns by caption ("Job Ads"),
+  but shelves, formulas and the derived checks use internal names (`job_ads`). The visual
+  mapper didn't map between them, so a field with a caption was silently dropped. That's any
+  CSV source, since Tableau tidies the names, and any field an author renamed. Book1 never
+  showed it because its Excel columns have no captions. `TableauWorkbook.display_names()` is
+  now the one internal → shown map, used by the visual mapper, the derived checks, the agent's
+  facts, and the DAX translator's schema (formulas reference `[job_ads]` and
+  `[Calculation_1862…]`, and the prompt now says what those are called in the model).
+- *Charts without their required roles.* A measure against a measure, or measures alone, went
+  to the column-chart rule and came out with no `Category`, which Microsoft's validator
+  rejects: 19 errors in four of five workbooks. New rules: measures on both Rows and Columns
+  with no dimension there → `scatterChart` (Detail → Category, Colour → Series, Size → Size;
+  Automatic, Circle and Shape marks). Measures with no dimension anywhere, including a KPI
+  sheet's Text/Label encodings → `cardVisual`. A safety net after the catalog check: a visual
+  still missing a required role (from any rule, or the LLM router) falls back to a card
+  (measures alone) or a table, with a warning, so an invalid visual is never written.
+- *The column-instance parser read only `agg:field:type`.* Tableau also writes an instance
+  number (`usr:Calc_1:qk:7`, the same field placed twice), a quick table calculation in front
+  (`pcto:sum:Sales:qk`, percent of total) and a visual-total variant (`sum:X:vtmin:qk`). Each
+  lost the field. `TableauFieldRef.table_calc` keeps the table calc; it isn't migrated yet.
+- *Pie and treemap.* Pie mark: Colour → slices, Angle (`wedge-size`) → Y. Empty Rows and
+  Columns with a Size measure and dimensions on the marks → `treemap`. Both sit before the
+  table rule, which otherwise claims any sheet with empty shelves.
+
+**Found on the way: the scores weren't stable** (HR Attrition 196, 198, 200, 204 on the same
+code). The migration was deterministic (normalized output identical across runs), but the
+checks found a hidden sheet's visual on a dashboard by its title, and HR's dashboard has four
+sheets titled "A T T R I T I O N T R E N D". Which one matched depended on random folder names.
+Fix: every visual records its Tableau sheet as a PBIR **annotation**
+(`{"name": "t2pbi.sheet", "value": "<sheet>"}`). Microsoft documents annotations as name-value
+pairs that Desktop ignores and external tools may use (learn.microsoft.com, "Power BI Desktop
+project report folder"). The checks match by it, falling back to titles for projects without
+it. The agent's file tools find a visual by it too (replacing the sheet → title map added
+earlier), and its prompt says to keep `annotations`. Microsoft's validator accepts it on every
+sample, and three corpus runs now score identically.
+
+**What remains** (109 field failures, per the breakdown script): fields "not in the model at
+all", mostly Tableau groups, sets (`io:` instances) and bins, which become nothing today;
+dimension-role calculations (22) and date levels (12), which is 4.5; table calculations; and
+sheets whose fields are untranslated calculations (they need a run with the model). Also
+still to do: unpacking a `.twbx` extract into CSV, so these workbooks render with data.
+
+**Verified.** 222 tests pass (new: column-instance forms, display names, cards, scatter, pie,
+treemap, the fallback, annotations with repeated titles). On the committed samples the only
+output change is the new annotation, and no report issue changed. Book1 still 57/64 oracle,
+44/50 derived.
+
+---
+
 ## 2026-11-27 — The agent's proven fixes become first-pass rules
 
 **Why.** CLAUDE.md: deterministic code wherever the input answers the question. In the 4.4b run

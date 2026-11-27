@@ -31,11 +31,10 @@ from t2pbi.ir.tableau_ir import (
     TableauWorkbook,
     TableauWorksheet,
     counted_table,
-    strip_brackets,
 )
 from t2pbi.mapping.model_mapper import row_count_measure_name
 from t2pbi.mapping.report import IssueSeverity, MigrationReport
-from t2pbi.mapping.visual_catalog import enforce_wells
+from t2pbi.mapping.visual_catalog import VISUAL_CATALOG, enforce_wells
 from t2pbi.mapping.visual_decision import (
     Ambiguity,
     DefaultRouter,
@@ -61,6 +60,10 @@ _UNORDERED_TYPES = {"azureMap", "map", "filledMap"}
 # Power BI Desktop's default size for a report-page tooltip.
 _TOOLTIP_PAGE_SIZE = (320, 240)
 _TABLE_MARKS = {"Text", "Square"}
+# Marks Tableau draws a scatter plot with when measures sit on both Rows and Columns.
+_SCATTER_MARKS = {"Automatic", "Circle", "Shape"}
+# Encodings whose measures a card shows (the big numbers of a KPI sheet).
+_CARD_ENCODINGS = {"text", "label"}
 
 # Marks with a deterministic chart rule; other marks are routed to the router as unmatched.
 _RECOGNIZED_MARKS = set(_VERTICAL_TYPE) | {"Automatic"}
@@ -93,7 +96,9 @@ def map_visuals(
     router = router or DefaultRouter()
     column_table = {c.name: t.name for t in model.tables for c in t.columns}
     measure_table = {m.name: t.name for t in model.tables for m in t.measures}
-    calc_display = _calc_display_map(workbook)
+    # Shelves reference fields by internal name; the model's columns and measures carry the names
+    # Tableau shows (captions). Resolve every reference through this map.
+    display_names = workbook.display_names()
     tooltip_sheets = {name for ws in workbook.worksheets for name in ws.tooltip_sheets}
     dashboards_of: dict[str, list[str]] = {}
     for dash in workbook.dashboards:
@@ -103,7 +108,7 @@ def map_visuals(
     pages: list[PBIReportPage] = []
     by_worksheet: dict[str, PBIVisual] = {}
     for ws in workbook.worksheets:
-        decision = _map_worksheet(ws, column_table, measure_table, calc_display)
+        decision = _map_worksheet(ws, column_table, measure_table, display_names)
         if decision is None:
             report.add(
                 IssueSeverity.WARNING,
@@ -134,6 +139,18 @@ def map_visuals(
             )
 
         wells, warnings = enforce_wells(decision.visual_type, decision.wells)
+        missing = _missing_required(decision.visual_type, wells)
+        if missing:
+            # Never write a visual Power BI rejects: a chart without its axis falls back to what
+            # can show the fields that did migrate.
+            fallback = _without_required_roles(wells)
+            report.add(
+                IssueSeverity.WARNING, "visual", ws.name,
+                f"'{decision.visual_type}' needs {', '.join(missing)}, which couldn't be migrated; "
+                f"shown as '{fallback.visual_type}' instead.",
+            )
+            decision = decision.model_copy(update={"visual_type": fallback.visual_type})
+            wells, warnings = enforce_wells(fallback.visual_type, fallback.wells)
         for warning in warnings:
             report.add(IssueSeverity.WARNING, "visual", ws.name, warning)
         if not wells:
@@ -145,8 +162,9 @@ def map_visuals(
             )
             continue
 
-        sort_field, descending = _sort_of(ws, wells, decision, column_table, measure_table, calc_display)
+        sort_field, descending = _sort_of(ws, wells, decision, column_table, measure_table, display_names)
         visual = _to_visual(decision, wells, ws.title or ws.name, sort_field, descending)
+        visual.source_sheet = ws.name
         by_worksheet[ws.name] = visual
         if _gets_own_page(ws, ws.name in tooltip_sheets, dashboards_of.get(ws.name, []), report):
             if ws.name in tooltip_sheets:
@@ -156,7 +174,7 @@ def map_visuals(
 
     _link_tooltip_pages(workbook, by_worksheet, pages, report)  # before dashboards copy the hosts
     pages.extend(
-        _map_dashboards(workbook, by_worksheet, column_table, measure_table, calc_display, report)
+        _map_dashboards(workbook, by_worksheet, column_table, measure_table, display_names, report)
     )
     return pages
 
@@ -213,7 +231,7 @@ def _sort_of(
     decision: MappingDecision,
     column_table: dict[str, str],
     measure_table: dict[str, str],
-    calc_display: dict[str, str],
+    display_names: dict[str, str],
 ) -> tuple[PBIFieldRef | None, bool]:
     """The visual's sort: the worksheet's own sort when it names a field the visual shows; else
     Tableau's default, the axis dimension in its own order (alphabetical, or by date); else
@@ -222,7 +240,7 @@ def _sort_of(
     shown = [f for fields in wells.values() for f in fields]
     for sort in ws.sorts:
         ref = sort.by if sort.by is not None else sort.dimension
-        target = _resolve_field(ref, column_table, measure_table, calc_display)
+        target = _resolve_field(ref, column_table, measure_table, display_names)
         if target is not None and target in shown:
             return target, sort.direction == "desc"
     axis = wells.get("Category")
@@ -278,7 +296,7 @@ def _map_dashboards(
     by_worksheet: dict[str, PBIVisual],
     column_table: dict[str, str],
     measure_table: dict[str, str],
-    calc_display: dict[str, str],
+    display_names: dict[str, str],
     report: MigrationReport,
 ) -> list[PBIReportPage]:
     """Build one report page per dashboard: worksheet visuals placed by zone, plus filter slicers."""
@@ -301,7 +319,7 @@ def _map_dashboards(
                     continue
                 visuals.append(source.model_copy(update={"name": new_object_name(), **box}))
             elif zone.kind == "filter" and zone.field is not None:
-                field = _resolve_field(zone.field, column_table, measure_table, calc_display)
+                field = _resolve_field(zone.field, column_table, measure_table, display_names)
                 if field is None or (field.entity, field.property) in seen_fields:
                     continue
                 seen_fields.add((field.entity, field.property))
@@ -340,10 +358,10 @@ def _map_worksheet(
     ws: TableauWorksheet,
     column_table: dict[str, str],
     measure_table: dict[str, str],
-    calc_display: dict[str, str],
+    display_names: dict[str, str],
 ) -> MappingDecision | None:
     def resolve_all(refs) -> list[PBIFieldRef]:
-        return [f for r in refs if (f := _resolve_field(r, column_table, measure_table, calc_display))]
+        return [f for r in refs if (f := _resolve_field(r, column_table, measure_table, display_names))]
 
     row_dims, row_measures = _split(resolve_all(ws.rows))
     col_dims, col_measures = _split(resolve_all(ws.cols))
@@ -362,6 +380,41 @@ def _map_worksheet(
     if ws.is_map:
         return _map_geographic(all_fields, tooltip_measures) or _fallback(all_fields, features)
 
+    # Measures and no dimension anywhere: Tableau shows totals (a KPI sheet's big numbers) -> a card.
+    card_measures = _dedup([*shelf_measures, *[f for e in ws.encodings if e.kind in _CARD_ENCODINGS
+                                                 for f in resolve_all([e.field]) if f.kind is not FieldKind.COLUMN]])
+    has_dimension = any(f.kind is FieldKind.COLUMN for f in [*row_dims, *col_dims, *encoding_fields])
+    if card_measures and not has_dimension and not ws.measure_names:
+        return MappingDecision(
+            visual_type="cardVisual",
+            wells={"Data": card_measures, "Tooltips": [f for f in tooltip_measures if f not in card_measures]},
+            rationale="Measures with no dimension -> card.",
+        )
+
+    # A pie: the Angle encoding's measure split into slices by the Colour dimension.
+    if ws.mark_class == "Pie":
+        angle = [f for e in ws.encodings if e.kind == "wedge-size" for f in resolve_all([e.field])]
+        if color_dims and angle:
+            return MappingDecision(
+                visual_type="pieChart",
+                wells={"Category": color_dims[:1], "Y": angle[:1],
+                       "Tooltips": [f for f in tooltip_measures if f not in angle[:1]]},
+                rationale="Pie mark: Colour -> slices (Category), Angle -> Y.",
+            )
+
+    # Nothing on Rows or Columns, a Size measure and dimensions on the marks: Tableau's treemap.
+    size_measures = [f for e in ws.encodings if e.kind == "size" for f in resolve_all([e.field])
+                     if f.kind is not FieldKind.COLUMN]
+    mark_dims = _dedup([f for e in ws.encodings if e.kind in ("text", "label", "color", "lod")
+                        for f in resolve_all([e.field]) if f.kind is FieldKind.COLUMN])
+    if not (ws.rows or ws.cols) and size_measures and mark_dims and ws.mark_class in ("Automatic", "Square"):
+        return MappingDecision(
+            visual_type="treemap",
+            wells={"Group": mark_dims[:1], "Details": mark_dims[1:2], "Values": size_measures[:1],
+                   "Tooltips": [f for f in tooltip_measures if f not in size_measures[:1]]},
+            rationale="Empty shelves, Size measure, dimensions on the marks -> treemap.",
+        )
+
     # A Measure Names/Measure Values sheet, a text/square mark, or a sheet with no measures -> table.
     if ws.measure_names or ws.mark_class in _TABLE_MARKS or not shelf_measures:
         values = _dedup([*row_dims, *col_dims, *shelf_measures, *measure_values])
@@ -372,6 +425,10 @@ def _map_worksheet(
                 rationale="Measure Values table or text/no-measure mark -> table.",
             )
         return _fallback(all_fields, features)
+
+    # Measures on both Rows and Columns, no dimension there: Tableau's scatter plot.
+    if row_measures and col_measures and not (row_dims or col_dims) and ws.mark_class in _SCATTER_MARKS:
+        return _scatter(ws, col_measures, row_measures, color_dims, tooltip_measures, resolve_all)
 
     # An unrecognized mark (e.g. Pie, Circle) has no deterministic rule -> hand to the router.
     if ws.mark_class not in _RECOGNIZED_MARKS:
@@ -410,6 +467,44 @@ def _map_worksheet(
         sort_field=values[0] if values else None,
         rationale="cols=X (Category), rows=Y; trellis dim -> Rows (small multiples), colour -> Series.",
     )
+
+
+def _scatter(
+    ws: TableauWorksheet,
+    x: list[PBIFieldRef],
+    y: list[PBIFieldRef],
+    color_dims: list[PBIFieldRef],
+    tooltip_measures: list[PBIFieldRef],
+    resolve_all,
+) -> MappingDecision:
+    """A scatter plot: the first measure on Columns is X, on Rows is Y. A mark per value of the
+    Detail dimension (Category), split by Colour (Series), sized by Size. Without a Detail
+    dimension Tableau draws one mark, the totals, and so does Power BI."""
+
+    detail, _ = _split([f for e in ws.encodings if e.kind == "lod" for f in resolve_all([e.field])])
+    _, size = _split([f for e in ws.encodings if e.kind == "size" for f in resolve_all([e.field])])
+    wells = {"X": x[:1], "Y": y[:1], "Category": detail[:1], "Series": color_dims[:1], "Size": size[:1],
+             "Tooltips": [f for f in tooltip_measures if f not in (x[:1] + y[:1])]}
+    return MappingDecision(
+        visual_type="scatterChart",
+        wells={role: fields for role, fields in wells.items() if fields},
+        rationale="Measures on both Rows and Columns -> scatter (Detail -> Category, Colour -> Series).",
+    )
+
+
+def _missing_required(visual_type: str, wells: dict[str, list[PBIFieldRef]]) -> list[str]:
+    spec = VISUAL_CATALOG.get(visual_type)
+    return [role for role in spec.required if not wells.get(role)] if spec else []
+
+
+def _without_required_roles(wells: dict[str, list[PBIFieldRef]]) -> MappingDecision:
+    """What shows a visual's migrated fields when its required roles can't be filled: a card for
+    measures alone, else a table of everything."""
+
+    fields = _dedup([f for role_fields in wells.values() for f in role_fields])
+    if fields and all(f.kind is not FieldKind.COLUMN for f in fields):
+        return MappingDecision(visual_type="cardVisual", wells={"Data": fields})
+    return MappingDecision(visual_type="tableEx", wells={"Values": fields})
 
 
 def _worksheet_features(
@@ -498,10 +593,10 @@ def _resolve_field(
     ref: TableauFieldRef,
     column_table: dict[str, str],
     measure_table: dict[str, str],
-    calc_display: dict[str, str],
+    display_names: dict[str, str],
 ) -> PBIFieldRef | None:
     name = ref.field
-    display = calc_display.get(name, name)
+    display = display_names.get(name, name)
 
     counted = counted_table(ref)
     if counted is not None:  # Tableau's "<table> (Count)": the COUNTROWS measure the model mapper adds
@@ -513,25 +608,16 @@ def _resolve_field(
     if display in measure_table:
         return PBIFieldRef(entity=measure_table[display], property=display, kind=FieldKind.MEASURE)
 
-    if name in column_table:
+    column = display if display in column_table else name
+    if column in column_table:
         func = _AGG_FUNCTION.get(ref.aggregation)
         if func is not None:
             return PBIFieldRef(
-                entity=column_table[name],
-                property=name,
+                entity=column_table[column],
+                property=column,
                 kind=FieldKind.AGGREGATION,
                 function=func,
             )
-        return PBIFieldRef(entity=column_table[name], property=name, kind=FieldKind.COLUMN)
+        return PBIFieldRef(entity=column_table[column], property=column, kind=FieldKind.COLUMN)
 
     return None
-
-
-def _calc_display_map(workbook: TableauWorkbook) -> dict[str, str]:
-    """Map a calculated field's internal name (e.g. 'Calculation_123') to its display name."""
-
-    mapping: dict[str, str] = {}
-    for ds in workbook.datasources:
-        for calc in ds.calculated_fields:
-            mapping[strip_brackets(calc.name)] = calc.display_name
-    return mapping

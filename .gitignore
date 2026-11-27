@@ -34,3 +34,6 @@ tools/**/obj/
 
 # Editor
 .vscode/
+
+# Third-party workbooks (Tableau Public): kept local, never pushed to the public repo
+/samples/local/

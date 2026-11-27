@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from t2pbi.ingest import load_workbook
 from t2pbi.ir.tableau_ir import TableauRole
 from t2pbi.parse import parse_workbook
@@ -49,3 +51,24 @@ def test_worksheet_parse_book1_if_present(tmp_path):
     assert ("Sales", TableauRole.MEASURE) in row_fields
     assert any(e.kind == "color" for e in sheet.encodings)
     assert any(e.kind == "tooltip" for e in sheet.encodings)
+
+
+@pytest.mark.parametrize(
+    ("ref", "field", "aggregation", "role", "table_calc"),
+    [
+        ("[ds].[sum:Sales:qk]", "Sales", "sum", "measure", None),
+        ("[ds].[none:Region:nk]", "Region", "none", "dimension", None),
+        # An instance number: the same field placed twice (e.g. with different table calcs).
+        ("[ds].[usr:Calculation_1059753339666751488:qk:7]", "Calculation_1059753339666751488", "usr", "measure", None),
+        # A quick table calculation on top of the aggregation.
+        ("[ds].[pcto:sum:Sales:qk]", "Sales", "sum", "measure", "pcto"),
+        ("[ds].[pcdf:avg:Order Transit Time:qk:1]", "Order Transit Time", "avg", "measure", "pcdf"),
+        # A visual-total variant after the field.
+        ("[ds].[sum:EmployeeCount:vtmin:qk]", "EmployeeCount", "sum", "measure", None),
+    ],
+)
+def test_column_instance_forms(ref, field, aggregation, role, table_calc):
+    from t2pbi.parse.tableau_parser import _parse_field_ref
+
+    parsed = _parse_field_ref(ref)
+    assert (parsed.field, parsed.aggregation, parsed.role.value, parsed.table_calc) == (field, aggregation, role, table_calc)

@@ -4,6 +4,7 @@
     python scripts/fidelity.py Book1 --render     # + numbers and pictures through Power BI Desktop
     python scripts/fidelity.py Book1 --render --llm   # migrate with the LLM too (DAX translation)
     python scripts/fidelity.py Book1 --refine         # + the refinement agent; scores what it kept
+    python scripts/fidelity.py --local                # the local corpus, derived checks only
 
 Migrates each workbook through the normal graph (``migrate()``), then scores the emitted project:
 
@@ -12,6 +13,11 @@ Migrates each workbook through the normal graph (``migrate()``), then scores the
   numbers in the same file;
 - visual (``--render``, needs Azure OpenAI) — each page's Desktop screenshot judged by the model
   against the Tableau screenshots in ``samples/<name>/screenshots/``; sheets without any are skipped.
+
+``--local`` scores a corpus instead: every workbook under ``samples/local/<name>/`` (third-party
+workbooks, gitignored), which has no hand-written oracle. Each is migrated with both validators on
+and scored against the checks derived from the workbook itself; the summary groups the failures
+by kind across the corpus, so it shows where t2pbi falls short most often.
 
 Writes ``<out>/fidelity.json`` and prints the scores. This is an evaluator, not a second migration
 runner. Exit code 1 only on structural regressions (the CI-checked layer); numeric and visual
@@ -62,6 +68,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Don't print the live log (each step, and the agent's model and tool calls) to stderr.",
     )
     parser.add_argument(
+        "--local", nargs="?", const=str(_SAMPLES / "local"), metavar="DIR",
+        help="Score the local corpus (default samples/local): derived checks and validator errors only.",
+    )
+    parser.add_argument(
         "--derived", action="store_true",
         help="Also score against expectations derived from the workbook itself (what the agent sees).",
     )
@@ -77,6 +87,8 @@ def main(argv: list[str] | None = None) -> int:
     enable_phoenix()  # traces to a local Phoenix, if T2PBI_PHOENIX=true
     live = () if args.quiet else (LiveLog(max_agent_steps=MigrationContext().max_agent_steps),)
     out_root = Path(args.out)
+    if args.local:
+        return _score_corpus(Path(args.local), out_root, chat if args.llm else None, live)
     report: dict = {}
     regressions = 0
     for name in names:
@@ -158,6 +170,41 @@ async def _render(name, expected, project, pbip_path, work_dir: Path, chat):
             continue
         verdicts.append(judge_sheet(chat, sheet, reference, shot))
     return numeric, verdicts
+
+
+def _score_corpus(root: Path, out_root: Path, chat, live) -> int:
+    """Derived checks and remaining errors for every workbook under ``root/<name>/``."""
+
+    import re
+
+    report: dict = {}
+    kinds: Counter = Counter()
+    passed = total = errors = 0
+    print(f"  {'workbook':28} {'sheets':>6} {'pages':>5} {'derived':>9} {'errors':>6}")
+    for folder in sorted(p for p in root.iterdir() if p.is_dir()):
+        book = next(iter(sorted(folder.glob("*.twbx")) + sorted(folder.glob("*.twb"))), None)
+        if book is None:
+            continue
+        project_dir = out_root / "local" / folder.name
+        result = migrate(book, project_dir, MigrationContext(chat_model=chat, callbacks=live))
+        workbook = parse_workbook(load_workbook(book))
+        results = score_structural(derive_expectations(workbook, book.name), read_project(project_dir))
+        ok = sum(r.passed for r in results)
+        failing = Counter(re.sub(r"\[.*\]", "[...]", r.check) for r in results if not r.passed)
+        kinds.update(failing)
+        passed, total, errors = passed + ok, total + len(results), errors + len(result.errors)
+        report[folder.name] = {"derived": _summarize(results), "errors": result.errors}
+        print(f"  {folder.name[:28]:28} {len(workbook.worksheets):>6} {len(read_project(project_dir).pages):>5} "
+              f"{ok:>4}/{len(results):<4} {len(result.errors):>6}")
+    print(f"  {'TOTAL':28} {'':>6} {'':>5} {passed:>4}/{total:<4} {errors:>6}   "
+          f"score {passed / total:.0%}" if total else "  (no workbooks)")
+    print("\nFailing checks by kind, across the corpus:")
+    for kind, n in kinds.most_common():
+        print(f"  {n:5}  {kind}")
+    out_root.mkdir(parents=True, exist_ok=True)
+    (out_root / "fidelity-local.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(f"\nWrote {out_root / 'fidelity-local.json'}")
+    return 0
 
 
 def _summarize(results) -> dict:

@@ -219,3 +219,23 @@ def test_read_project_reads_titles_page_types_and_multiline_measures(tmp_path):
     assert page is not None and page.page_type == "Tooltip" and page.visibility == "HiddenInViewMode"
     assert page.visuals[0].title == "It's"
     assert project.measures == {"One": ("T", "1"), "Multi": ("T", "VAR x = 1 RETURN x")}
+
+
+def test_a_sheets_visual_is_found_by_its_annotation_when_titles_repeat():
+    # Two sheets on one dashboard can share a title (HR Attrition has four "Attrition trend"s):
+    # only the t2pbi.sheet annotation tells their visuals apart.
+    monthly = Visual(name="v1", visual_type="lineChart", title="Attrition trend",
+                     roles={"Y": [{"Column": {"Expression": {"SourceRef": {"Entity": "T"}}, "Property": "Month"}}]},
+                     sheet="Trend (M)")
+    yearly = Visual(name="v2", visual_type="lineChart", title="Attrition trend",
+                    roles={"Y": [{"Column": {"Expression": {"SourceRef": {"Entity": "T"}}, "Property": "Year"}}]},
+                    sheet="Trend (Y)")
+    for order in ([monthly, yearly], [yearly, monthly]):  # folder order is random
+        project = Project(pages=[Page(name="p", display_name="Dash", page_type=None, visibility=None, visuals=order)],
+                          measures={})
+        sheets = [
+            _parse_sheet({"name": "Trend (M)", "page": "Dash", "fields": ["Month"]}),
+            _parse_sheet({"name": "Trend (Y)", "page": "Dash", "fields": ["Year"]}),
+        ]
+        results = score_structural(WorkbookExpectations(workbook="w", sheets=sheets), project)
+        assert all(r.passed for r in results if r.check.startswith("fields[")), [r for r in results if not r.passed]

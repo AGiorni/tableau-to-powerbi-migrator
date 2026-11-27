@@ -26,6 +26,8 @@ class Visual:
     sort: list[tuple[dict, str]] = field(default_factory=list)
     # The report-page tooltip shown on hover: that page's name (from visualTooltip's section).
     tooltip_page: str | None = None
+    # The Tableau sheet it was made from (t2pbi's "t2pbi.sheet" annotation), when recorded.
+    sheet: str | None = None
 
 
 @dataclass
@@ -117,7 +119,17 @@ def _read_visual(path: Path) -> Visual:
         roles=roles,
         sort=sort,
         tooltip_page=_tooltip_page(body),
+        sheet=sheet_annotation(raw),
     )
+
+
+def sheet_annotation(raw: dict) -> str | None:
+    """The Tableau sheet a visual.json says it was made from (the ``t2pbi.sheet`` annotation)."""
+
+    for note in raw.get("annotations") or []:
+        if isinstance(note, dict) and note.get("name") == "t2pbi.sheet":
+            return note.get("value")
+    return None
 
 
 def _tooltip_page(body: dict) -> str | None:

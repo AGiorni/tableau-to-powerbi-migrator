@@ -42,10 +42,11 @@ def derive_expectations(workbook: TableauWorkbook, workbook_file: str) -> Workbo
     calcs = {
         strip_brackets(calc.name): calc for ds in workbook.datasources for calc in ds.calculated_fields
     }
+    names = workbook.display_names()
     tooltip_sheets = {name for ws in workbook.worksheets for name in ws.tooltip_sheets}
     sheets = []
     for ws in workbook.worksheets:
-        sheet = _worksheet(ws, calcs, ws.name in tooltip_sheets)
+        sheet = _worksheet(ws, calcs, names, ws.name in tooltip_sheets)
         # What Tableau viewers see: a hidden sheet only inside a dashboard (the first one showing
         # it). A tooltip sheet keeps its page, as the tooltip.
         shown_on = [d.name for d in workbook.dashboards if ws.name in d.worksheet_names]
@@ -58,26 +59,28 @@ def derive_expectations(workbook: TableauWorkbook, workbook_file: str) -> Workbo
         contains = list(dict.fromkeys(z.worksheet for z in dashboard.zones if z.kind == "worksheet" and z.worksheet))
         slicers = []
         for zone in dashboard.zones:
-            spec = field_spec(zone.field, calcs) if zone.kind == "filter" and zone.field else None
+            spec = field_spec(zone.field, calcs, names) if zone.kind == "filter" and zone.field else None
             if spec is not None and spec.qualifier is None and spec not in slicers:
                 slicers.append(spec)  # filter cards on measures aren't slicers
         sheets.append(SheetExpectation(name=dashboard.name, kind="dashboard", contains=contains, slicers=slicers))
     return WorkbookExpectations(workbook=workbook_file, sheets=sheets)
 
 
-def _worksheet(ws: TableauWorksheet, calcs: dict[str, TableauCalculatedField], is_tooltip: bool) -> SheetExpectation:
+def _worksheet(
+    ws: TableauWorksheet, calcs: dict[str, TableauCalculatedField], names: dict[str, str], is_tooltip: bool
+) -> SheetExpectation:
     refs = [*ws.rows, *ws.cols, *ws.measure_names]
     kinds = (*_ENCODINGS, "lod") if ws.is_map else _ENCODINGS
     refs += [e.field for e in ws.encodings if e.kind in kinds]
     fields: list[FieldSpec] = []
     for ref in refs:
-        spec = field_spec(ref, calcs)
+        spec = field_spec(ref, calcs, names)
         if spec is not None and spec not in fields:
             fields.append(spec)
 
     sort = None
     for s in ws.sorts:
-        by = field_spec(s.by, calcs) if s.by is not None else field_spec(s.dimension, calcs)
+        by = field_spec(s.by, calcs, names) if s.by is not None else field_spec(s.dimension, calcs, names)
         if by is not None:
             sort = (by, "ascending" if s.direction == "asc" else "descending")
             break
@@ -91,14 +94,19 @@ def _worksheet(ws: TableauWorksheet, calcs: dict[str, TableauCalculatedField], i
     )
 
 
-def field_spec(ref: TableauFieldRef, calcs: dict[str, TableauCalculatedField]) -> FieldSpec | None:
-    """The field spec a Tableau column instance should become in Power BI."""
+def field_spec(
+    ref: TableauFieldRef, calcs: dict[str, TableauCalculatedField], names: dict[str, str] | None = None
+) -> FieldSpec | None:
+    """The field spec a Tableau column instance should become in Power BI. ``names`` maps a
+    column's internal name to the name Tableau shows (``TableauWorkbook.display_names``): the
+    migrated model is named after what users see."""
 
-    name, agg = ref.field, ref.aggregation
+    agg = ref.aggregation
+    name = (names or {}).get(ref.field, ref.field)
     table = counted_table(ref)
     if table is not None:
         return FieldSpec(table, "rowcount")
-    calc = calcs.get(name)
+    calc = calcs.get(ref.field)
     if calc is not None:
         if agg == "usr" or calc.role is TableauRole.MEASURE:
             return FieldSpec(calc.display_name, "measure")

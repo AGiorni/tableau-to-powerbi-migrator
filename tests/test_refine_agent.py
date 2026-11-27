@@ -36,8 +36,7 @@ def workbook():
 @pytest.fixture
 def files(book1_project, tmp_path, workbook):
     shutil.copytree(book1_project, tmp_path, dirs_exist_ok=True)
-    # As fix_item does: a visual can be named by the sheet it shows (its title is the sheet's own).
-    return ReportFiles(tmp_path, {ws.name: ws.title or ws.name for ws in workbook.worksheets})
+    return ReportFiles(tmp_path)
 
 
 def _tools(files, page=TOOLTIP, errors=()):

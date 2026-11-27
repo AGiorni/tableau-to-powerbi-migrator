@@ -140,10 +140,14 @@ def _tooltip_link(host: str, tooltip: Page | None, project: Project, sheets: dic
 def _dashboard_checks(sheet: SheetExpectation, page: Page | None, titles: dict[str, str]):
     visuals = page.visuals if page else []
     shown = [v.title for v in visuals]
+    annotated = {v.sheet for v in visuals if v.sheet}
     for name in sheet.contains:
-        # A visual is found by its sheet's name or by its sheet's expected title, so this checks
-        # presence whether or not titles have been migrated yet (that is the `title` check's job).
-        found = any(t == name or _title_matches(t, titles.get(name)) for t in shown)
+        # A visual is found by the sheet its annotation names; without annotations, by its sheet's
+        # name or expected title, so this checks presence whether or not titles have been migrated
+        # yet (that is the `title` check's job).
+        found = name in annotated if annotated else any(
+            t == name or _title_matches(t, titles.get(name)) for t in shown
+        )
         yield f"contains[{name}]", found, "" if found else f"visual titles: {shown}"
     slicers = [f for v in visuals if v.visual_type.endswith("licer") for f in v.roles.get("Values", [])]
     for spec in sheet.slicers:
@@ -178,11 +182,15 @@ def _main_visual(page: Page | None) -> Visual | None:
 
 
 def _sheet_visual(sheet: SheetExpectation, page: Page | None) -> Visual | None:
-    """The visual made from ``sheet`` on another sheet's page (a dashboard), found as the
-    dashboard check finds it: by the sheet's name or by its expected title."""
+    """The visual made from ``sheet`` on another sheet's page (a dashboard): the one whose
+    annotation names the sheet, else (a project without annotations) the one titled after it.
+    Titles can repeat (several sheets titled "Attrition trend"), annotations can't."""
 
     if page is None:
         return None
+    annotated = [v for v in page.visuals if v.sheet == sheet.name]
+    if annotated or any(v.sheet for v in page.visuals):
+        return annotated[0] if annotated else None
     return next(
         (v for v in page.visuals if v.title == sheet.name or _title_matches(v.title, sheet.title)),
         None,

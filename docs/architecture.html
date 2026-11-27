@@ -494,7 +494,7 @@ html { scroll-behavior: smooth; }
         <text class="t-desc" x="32" y="615">→ one PBIVisual · title ← custom title · Tooltips ← Tooltip shelf · sort ← the sheet's, else axis A→Z</text>
       </svg>
     </div>
-    <figcaption>"Rows" is Power BI's small-multiples role, not "SmallMultiples": a dimension sharing the measure's shelf is a trellis. A map sheet with no dimensions, or a table sheet with no fields, also goes to the router. A worksheet is skipped, with a warning, when no field resolves, the router gives up, or nothing survives <span class="mono">enforce_wells</span>. Read from the sheet, never assumed: Tableau's default stacking (area marks; bars split by a colour dimension become stacked <span class="mono">columnChart</span>/<span class="mono">barChart</span>), the static part of the custom title, measures on the Tooltip shelf, and the sheet's sort (else the axis dimension in its own order, Tableau's default; maps get none). A row count of a logical table ("Orders (Count)") binds to the <span class="mono">COUNTROWS</span> measure the model mapper adds. Not yet: an explicit "Stack Marks: Off", and colouring a map's regions by a measure.</figcaption>
+    <figcaption>"Rows" is Power BI's small-multiples role, not "SmallMultiples": a dimension sharing the measure's shelf is a trellis. A map sheet with no dimensions, or a table sheet with no fields, also goes to the router. A worksheet is skipped, with a warning, when no field resolves, the router gives up, or nothing survives <span class="mono">enforce_wells</span>. Read from the sheet, never assumed: Tableau's default stacking (area marks; bars split by a colour dimension become stacked <span class="mono">columnChart</span>/<span class="mono">barChart</span>), the static part of the custom title, measures on the Tooltip shelf, and the sheet's sort (else the axis dimension in its own order, Tableau's default; maps get none). A row count of a logical table ("Orders (Count)") binds to the <span class="mono">COUNTROWS</span> measure the model mapper adds. Further rules, before the ones above: measures with no dimension anywhere (a KPI sheet) → <span class="mono">cardVisual</span>; a Pie mark → <span class="mono">pieChart</span> (Colour → slices, Angle → Y); empty shelves with a Size measure and dimensions on the marks → <span class="mono">treemap</span>; measures on both Rows and Columns → <span class="mono">scatterChart</span> (Detail → points, Colour → series). Shelf fields resolve through the workbook's display names (<span class="mono">TableauWorkbook.display_names</span>): the model is named after captions, shelves use internal names. A visual still missing a required role falls back to a card or a table with a warning, never an invalid visual. Each visual records its sheet as the PBIR annotation <span class="mono">t2pbi.sheet</span>, which Desktop ignores and the checks and the agent's tools use. Not yet: an explicit "Stack Marks: Off", colouring a map's regions by a measure, groups/sets/bins, quick table calculations.</figcaption>
   </figure>
 
   <div class="cols">
@@ -630,7 +630,7 @@ html { scroll-behavior: smooth; }
         <tr><td>graph/nodes.py</td><td>The nine nodes (thin, return partial updates) and the three routers.</td></tr>
         <tr><td>graph/state.py</td><td><code>MigrationState</code> (data, serializable) and <code>MigrationContext</code> (chat model, flags, budgets).</td></tr>
         <tr><td>ingest/loader.py</td><td>Reads <code>.twb</code>, or the shallowest <code>.twb</code> inside a <code>.twbx</code> zip. Extracts are ignored.</td></tr>
-        <tr><td>parse/tableau_parser.py</td><td>XML → Tableau IR: datasources, columns, calcs (LOD flagged), joins, parameters, worksheet shelves, hidden sheets, dashboard zones.</td></tr>
+        <tr><td>parse/tableau_parser.py</td><td>XML → Tableau IR: datasources, columns, calcs (LOD flagged), joins, parameters, worksheet shelves (column instances incl. table-calc prefixes and instance numbers), hidden sheets, dashboard zones.</td></tr>
         <tr><td>ir/tableau_ir.py</td><td>Pydantic models for what was read from Tableau.</td></tr>
         <tr><td>ir/powerbi_ir.py</td><td>Pydantic models for what will be written: tables, measures, relationships, pages, visuals.</td></tr>
         <tr><td>mapping/model_mapper.py</td><td>Tables, columns, measures, relationships.</td></tr>
@@ -699,6 +699,9 @@ dotnet publish tools\tmdl-validate -c Release -o tools\tmdl-validate\bin\publish
 # numbers and pictures through Desktop + the LLM judge)
 python scripts\fidelity.py
 
+# the local corpus (samples\local, gitignored): derived checks
+python scripts\fidelity.py --local
+
 # output unchanged? (run on both revisions)
 python scripts\snapshot_outputs.py snap a.json
 python scripts\snapshot_outputs.py compare a.json b.json</pre>
@@ -707,7 +710,7 @@ python scripts\snapshot_outputs.py compare a.json b.json</pre>
 </section>
 
 <footer>
-  Checked against <span class="mono">main</span> after the agent's proven fixes moved into the first pass, 27 Nov 2026. If the code has moved since, trust the code, and update this map.
+  Checked against <span class="mono">main</span> after the local-corpus fixes (display names, cards, scatter, pie, treemap, annotations), 27 Nov 2026. If the code has moved since, trust the code, and update this map.
 </footer>
 
 </div>

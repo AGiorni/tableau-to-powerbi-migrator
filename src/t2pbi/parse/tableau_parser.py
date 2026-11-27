@@ -538,6 +538,13 @@ def _parse_field_ref(ref: str | None) -> TableauFieldRef | None:
         return None
 
     parts = inner.split(":")
+    if parts[-1].isdigit():  # an instance number: several copies of one field, e.g. with different table calcs
+        parts = parts[:-1]
+    table_calc = None
+    if len(parts) >= 4 and parts[0] in _TABLE_CALCS:  # pcto:sum:Sales:qk
+        table_calc, parts = parts[0], parts[1:]
+    if len(parts) >= 4 and parts[-2].startswith("vt"):  # sum:Sales:vtmin:qk, a visual-total variant
+        parts = [*parts[:-2], parts[-1]]
     if len(parts) >= 3:
         agg, role_code = parts[0], parts[-1]
         field = ":".join(parts[1:-1])
@@ -545,7 +552,14 @@ def _parse_field_ref(ref: str | None) -> TableauFieldRef | None:
         agg, field, role_code = "none", inner, "nk"
 
     role = TableauRole.MEASURE if role_code == "qk" else TableauRole.DIMENSION
-    return TableauFieldRef(field=field, aggregation=agg, role=role, raw=inner)
+    return TableauFieldRef(field=field, aggregation=agg, role=role, raw=inner, table_calc=table_calc)
+
+
+# Quick table calculations Tableau writes in front of a column instance's aggregation.
+_TABLE_CALCS = {
+    "pcto", "pcdf", "diff", "rsum", "ravg", "rmin", "rmax", "rcnt", "rank", "pctrank", "mavg", "msum",
+    "cumsum", "pcpt",
+}
 
 
 def _parse_dashboard(db_el: etree._Element) -> TableauDashboard:

@@ -145,13 +145,20 @@ class TableauDatasource(BaseModel):
 class TableauFieldRef(BaseModel):
     """A field placed on a worksheet shelf or encoding (a Tableau column-instance).
 
-    Parsed from the internal ``[agg:Field Name:role]`` form, e.g. ``sum:Sales:qk``.
+    Parsed from the internal ``[agg:Field Name:role]`` form, e.g. ``sum:Sales:qk``, which may
+    also carry a table calculation in front (``pcto:sum:Sales:qk``), a visual-total suffix after
+    the field (``sum:Sales:vtmin:qk``) and an instance number at the end (``usr:Calc_1:qk:7``).
     """
 
     field: str = Field(description="Field display name, e.g. 'Sales'.")
     aggregation: str = Field(default="none", description="Tableau agg code: none/sum/avg/cnt/...")
     role: TableauRole = TableauRole.DIMENSION
     raw: str = Field(default="", description="Original column-instance name for debugging.")
+    table_calc: str | None = Field(
+        default=None,
+        description="A quick table calculation applied on top: pcto (percent of total), pcdf "
+        "(percent difference), rsum (running total), rank, ... Not migrated yet.",
+    )
 
 
 class TableauEncoding(BaseModel):
@@ -229,6 +236,20 @@ class TableauWorkbook(BaseModel):
     parameters: list[TableauParameter] = Field(default_factory=list)
     worksheets: list[TableauWorksheet] = Field(default_factory=list)
     dashboards: list[TableauDashboard] = Field(default_factory=list)
+
+    def display_names(self) -> dict[str, str]:
+        """Internal field name -> the name Tableau shows (and the migrated model uses), for every
+        column and calculated field whose two names differ. Shelves and formulas reference
+        fields by internal name (``job_ads``, ``Calculation_1862…``); users see captions ("Job
+        Ads", "Profit Ratio"), and the model's columns and measures are named after those."""
+
+        names: dict[str, str] = {}
+        for ds in self.datasources:
+            for field in [*ds.columns, *ds.calculated_fields]:
+                internal = strip_brackets(field.name)
+                if field.display_name != internal:
+                    names.setdefault(internal, field.display_name)
+        return names
 
 
 # Tableau's per-table row count ("Orders (Count)" in the data pane) is a column of datatype 'table'

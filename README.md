@@ -70,7 +70,9 @@ Working end to end on the sample workbooks:
   hand-reviewed expectations in `samples/<workbook>/expected.toml`: structure (in CI), and with
   `--render` the numbers (queried in Power BI Desktop) and the pictures (an LLM compares Desktop
   screenshots with Tableau screenshots in `samples/<workbook>/screenshots/`). The samples and
-  their layout are described in [samples/README.md](samples/README.md).
+  their layout are described in [samples/README.md](samples/README.md). `--local` scores a
+  corpus of your own workbooks (`samples/local/`, gitignored) on checks derived from each
+  workbook, with no oracle needed.
 
 Open work is in [BACKLOG.md](BACKLOG.md); the reasoning behind past decisions is in
 [docs/DEVLOG.md](docs/DEVLOG.md). For a visual map of the pipeline, open

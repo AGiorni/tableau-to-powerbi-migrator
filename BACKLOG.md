@@ -128,7 +128,32 @@ doesn't diff every file.
   Carry the error into the INFO issue, as the translator now does.
 - [ ] **Grow the test corpus beyond Book1.** Only Book1 has real data; the other samples are
   synthetic. More data-backed workbooks are what turn the fidelity harness from a smoke test into
-  a measure.
+  a measure. *(2026-11-27: started.)* Five Tableau Public workbooks in `samples/local/`
+  (gitignored), scored with `scripts/fidelity.py --local` on the derived checks: 741/903 (82%),
+  no validator errors (DEVLOG). Still to do: more workbooks that cover what these don't (line
+  and dual-axis charts, filled maps, parameters, LOD expressions, dashboard actions), and
+  screenshots for the ones the visual judge should see.
+
+- [ ] **Unpack a `.twbx` extract so the migrated report has data.** *(raised 2026-11-27)* Tableau
+  Public workbooks carry their data only as a `.hyper` extract inside the package; the source
+  the workbook names (an Excel or CSV file on the author's machine) isn't there. The migrated
+  model points at that original path, so the report opens empty. Export each extract table to
+  CSV with Tableau's Hyper API (`tableauhyperapi`, an optional extra) into the output folder and
+  point the M partitions at it. Without the package installed, behave as today.
+
+- [ ] **Groups, sets and bins become nothing.** *(seen 2026-11-27, corpus)* Most of the corpus's
+  fields "not in the model at all": Tableau groups ("Age group"), sets (`io:State Set`
+  instances) and bins have no model column. Groups and bins map to calculated columns (a
+  `SWITCH` or a bin size); sets to a calculated column or a Power BI group. Related to 4.5.
+
+- [ ] **Quick table calculations aren't migrated.** *(seen 2026-11-27, corpus)* The parser now
+  reads them (`TableauFieldRef.table_calc`: `pcto` percent of total, `pcdf` percent difference,
+  running totals, rank), but the visual shows the plain aggregation. Percent of total maps to
+  Power BI's "Show value as"; the others to DAX measures (window functions).
+
+- [ ] **Shape marks used as icons or toggles.** *(seen 2026-11-27, corpus)* HR Attrition draws
+  buttons and toggle switches with Shape marks and a constant calculation. No visual fits; they
+  belong to dashboard interactivity (bookmarks, buttons), not to data visuals.
 
 ## Known gaps in Tableau migration
 

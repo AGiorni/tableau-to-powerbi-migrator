@@ -41,8 +41,9 @@ How to work:
   take columns, "Grouping", or measures, "Measure"), lookup_formatting for formatting objects and
   properties, encode_literal for literal values, list_model_fields for the tables, columns and
   measures a field may reference.
-- Make the smallest change that fixes the listed problems. Keep "$schema", "name" and
-  "position" as they are unless the fix needs otherwise; don't restyle anything else.
+- Make the smallest change that fixes the listed problems. Keep "$schema", "name",
+  "position" and "annotations" (they tie the visual to its Tableau sheet) as they are unless the
+  fix needs otherwise; don't restyle anything else.
 - Every save is validated. Fix each error it reports, then call check_page to see which of the
   page's problems remain; continue until they're fixed or can't be fixed with these files.
 - A refused call says why; adjust instead of repeating it.
@@ -94,7 +95,8 @@ def tableau_facts(workbook: TableauWorkbook, sheet: str) -> dict[str, Any]:
     """What the Tableau sheet shows, as field specs ("Sales:sum", "Order Date:month")."""
 
     calcs = {strip_brackets(c.name): c for ds in workbook.datasources for c in ds.calculated_fields}
-    spec = lambda ref: str(field_spec(ref, calcs))
+    names = workbook.display_names()
+    spec = lambda ref: str(field_spec(ref, calcs, names))
     for ws in workbook.worksheets:
         if ws.name != sheet:
             continue

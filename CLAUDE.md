@@ -74,6 +74,11 @@ snapshot the output on both revisions and compare —
 the same with `after.json` on the new one, then `python scripts/snapshot_outputs.py compare
 before.json after.json`. It masks the random page/visual ids, so it reports only real changes.
 
+For a change to parsing or mapping, also score the local corpus when it's there:
+`python scripts/fidelity.py --local` (third-party workbooks in `samples/local/`, gitignored, so
+not in every checkout). Book1 alone has hidden general bugs before; a rule must hold across
+workbooks, never be fitted to one.
+
 ## Settings and secrets
 
 Local settings (Azure OpenAI endpoint and key, `PBI_DESKTOP_PATH`, …) go in `.env` at the repo

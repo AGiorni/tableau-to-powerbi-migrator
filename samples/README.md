@@ -39,3 +39,9 @@ Adding a sample: make `samples/<name>/`, put the workbook in it, and add screens
 `expected.toml` if it should be scored (format: `src/t2pbi/fidelity/expectations.py`). Commit
 only workbooks and screenshots of public or synthetic data: a client's screenshots contain client
 data.
+
+**The local corpus.** Workbooks downloaded from Tableau Public belong to their authors, and this
+repository is public, so they live in `samples/local/<name>/` (gitignored), with the same layout:
+the `.twbx` and, optionally, `screenshots/`. `python scripts/fidelity.py --local` migrates each
+one with both validators on and scores it on the checks derived from the workbook itself, with no
+oracle needed, grouping the failures by kind across the corpus.

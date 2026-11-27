@@ -250,3 +250,111 @@ def test_a_row_count_of_a_single_table_source_finds_its_table():
     sheet = _sheet(measure_names=[_ref("cnt:Orders_" + "A" * 32 + ":qk")])
     _add_row_count_measures(TableauWorkbook(source_name="W", worksheets=[sheet]), model, MigrationReport())
     assert [(m.name, m.expression) for m in model.tables[0].measures] == [("Orders (Count)", "COUNTROWS('Sample - Superstore')")]
+
+
+# ------------------------------------------------------------------------------------------------
+# Found by the local corpus (samples/local): fields with display names, sheets with no axis.
+# ------------------------------------------------------------------------------------------------
+
+
+def _captioned_workbook(*sheets):
+    """A workbook whose columns have captions, as Tableau gives CSV columns ("job_ads" -> "Job Ads")."""
+
+    from t2pbi.ir.tableau_ir import (
+        TableauColumn,
+        TableauDatasource,
+        TableauDataType,
+        TableauWorkbook,
+    )
+
+    columns = [
+        TableauColumn(name="[job_ads]", caption="Job Ads", datatype=TableauDataType.REAL, role=TableauRole.MEASURE),
+        TableauColumn(name="[state]", caption="State", datatype=TableauDataType.STRING),
+        TableauColumn(name="[sales]", caption="Sales", datatype=TableauDataType.REAL, role=TableauRole.MEASURE),
+    ]
+    return TableauWorkbook(source_name="W", datasources=[TableauDatasource(name="ds", caption="Jobs", columns=columns)],
+                           worksheets=list(sheets))
+
+
+def test_shelf_fields_resolve_through_their_display_names():
+    sheet = _sheet(mark_class="Bar", cols=[_ref("none:state:nk")], rows=[_ref("sum:job_ads:qk")])
+    workbook = _captioned_workbook(sheet)
+    model = map_model(workbook, MigrationReport()).model
+    assert {c.name for t in model.tables for c in t.columns} >= {"Job Ads", "State"}  # the model shows captions
+    visual = map_visuals(workbook, model, MigrationReport())[0].visuals[0]
+    assert _roles(visual) == {"Category": ["State"], "Y": ["Job Ads"]}  # shelves say job_ads / state
+
+
+def test_the_translator_is_told_which_model_name_a_formula_field_has():
+    from t2pbi.mapping.expression_translator import schema_context
+
+    workbook = _captioned_workbook()
+    context = schema_context(map_model(workbook, MigrationReport()).model, workbook.display_names())
+    assert "[job_ads] -> [Job Ads]" in context
+
+
+def test_measures_with_no_dimension_become_a_card():
+    from t2pbi.ir.tableau_ir import TableauEncoding
+
+    big_number = _sheet(name="kpi", mark_class="Text", encodings=[TableauEncoding(kind="text", field=_ref("sum:Sales:qk"))])
+    shelf_only = _sheet(name="total", mark_class="Automatic", rows=[_ref("sum:Sales:qk")])
+    pages, _ = _map(big_number, shelf_only)
+    for name in ("kpi", "total"):
+        visual = pages[name].visuals[0]
+        assert (visual.visual_type, _roles(visual)) == ("cardVisual", {"Data": ["Sales"]})
+
+
+def test_measures_on_both_shelves_make_a_scatter_plot():
+    from t2pbi.ir.tableau_ir import TableauEncoding
+
+    sheet = _sheet(mark_class="Circle", cols=[_ref("sum:Sales:qk")], rows=[_ref("sum:Profit:qk")],
+                   encodings=[TableauEncoding(kind="lod", field=_ref("none:Region:nk")),
+                              TableauEncoding(kind="color", field=_ref("none:Segment:nk"))])
+    visual = _map(sheet)[0]["S"].visuals[0]
+    assert visual.visual_type == "scatterChart"
+    assert _roles(visual) == {"X": ["Sales"], "Y": ["Profit"], "Category": ["Region"], "Series": ["Segment"]}
+
+
+def test_a_chart_whose_axis_didnt_migrate_falls_back_instead_of_breaking():
+    from t2pbi.ir.tableau_ir import TableauEncoding
+
+    # The axis field is unknown to the model (e.g. a dimension calculation), but a colour split
+    # migrated: a column chart without its required Category would be rejected by Power BI.
+    sheet = _sheet(name="split", mark_class="Bar", cols=[_ref("none:Nowhere:nk")], rows=[_ref("sum:Sales:qk")],
+                   encodings=[TableauEncoding(kind="color", field=_ref("none:Region:nk"))])
+    pages, report = _map(sheet)
+    visual = pages["split"].visuals[0]
+    assert visual.visual_type == "tableEx" and set(_roles(visual)["Values"]) == {"Region", "Sales"}
+    assert any("needs Category" in i.message and "shown as 'tableEx'" in i.message for i in report.issues)
+
+
+def test_each_visual_records_its_tableau_sheet(book1_twb):
+    from t2pbi.emit.pbir_writer import SHEET_ANNOTATION
+
+    workbook = parse_workbook(load_workbook(book1_twb))
+    pages = map_visuals(workbook, map_model(workbook, MigrationReport()).model, MigrationReport())
+    dashboard = next(p for p in pages if p.display_name == "Executive Overview")
+    charts = [v for v in dashboard.visuals if v.visual_type != "slicer"]
+    assert {v.source_sheet for v in charts} == set(workbook.dashboards[0].worksheet_names)
+    annotations = build_visual_json(charts[0])["annotations"]
+    assert annotations == [{"name": SHEET_ANNOTATION, "value": charts[0].source_sheet}]
+
+
+def test_a_pie_mark_becomes_a_pie_chart():
+    from t2pbi.ir.tableau_ir import TableauEncoding
+
+    sheet = _sheet(mark_class="Pie", encodings=[TableauEncoding(kind="color", field=_ref("none:Region:nk")),
+                                                TableauEncoding(kind="wedge-size", field=_ref("sum:Sales:qk"))])
+    visual = _map(sheet)[0]["S"].visuals[0]
+    assert (visual.visual_type, _roles(visual)) == ("pieChart", {"Category": ["Region"], "Y": ["Sales"]})
+
+
+def test_empty_shelves_with_a_size_measure_make_a_treemap():
+    from t2pbi.ir.tableau_ir import TableauEncoding
+
+    sheet = _sheet(mark_class="Automatic", encodings=[TableauEncoding(kind="size", field=_ref("sum:Sales:qk")),
+                                                      TableauEncoding(kind="text", field=_ref("none:Region:nk")),
+                                                      TableauEncoding(kind="text", field=_ref("none:Segment:nk"))])
+    visual = _map(sheet)[0]["S"].visuals[0]
+    assert visual.visual_type == "treemap"
+    assert _roles(visual) == {"Group": ["Region"], "Details": ["Segment"], "Values": ["Sales"]}
