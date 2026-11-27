@@ -34,6 +34,7 @@ Files are written as UTF-8 **without BOM**, as required for editing PBIP outside
 from __future__ import annotations
 
 import json
+import shutil
 import uuid
 from pathlib import Path
 
@@ -56,6 +57,14 @@ def assemble_pbip(
     out = Path(out_dir)
     name = model.name
     files = build_file_map(model, pages)
+
+    # A re-run into the same folder replaces the project: page, visual and table folders have
+    # fresh names each run, so stale ones would otherwise stay and show up as extra pages and
+    # tables. Only our own definition folders go; Desktop's .pbi folders (local settings, data
+    # cache) and anything else in out_dir are left alone.
+    for folder in (out / f"{name}.Report" / "definition", out / f"{name}.SemanticModel" / "definition"):
+        if folder.is_dir():
+            shutil.rmtree(folder)
 
     for rel_path, content in files.items():
         target = out / rel_path

@@ -62,3 +62,18 @@ def test_report_flags_untranslated(superstore_twb, tmp_path):
     # Without an LLM, both calculated fields remain untranslated; the LOD one is an error.
     messages = [i.message for i in result.report.issues if i.stage == "expression"]
     assert any("awaiting DAX translation" in m for m in messages)
+
+
+def test_rerunning_into_the_same_folder_replaces_the_project(book1_twb, tmp_path):
+    # Page and visual folders get fresh names every run; stale ones must not survive as extra pages.
+    context = MigrationContext(run_output_validation=False)
+    first = migrate(book1_twb, tmp_path, context)
+    settings = first.pbip_path.parent / "Book1.SemanticModel" / ".pbi" / "localSettings.json"
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text("{}", encoding="utf-8")  # Desktop's own file
+
+    second = migrate(book1_twb, tmp_path, context)
+
+    pages = list(second.pbip_path.parent.glob("Book1.Report/definition/pages/*/page.json"))
+    assert len(pages) == 6
+    assert settings.is_file()
